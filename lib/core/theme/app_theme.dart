@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 class AppTheme {
   static ThemeData get lightTheme {
     return ThemeData(
-      primaryColor: Colors.blue[300],
-      scaffoldBackgroundColor: const Color(0xFFF5F9FF),
+      primaryColor: Colors.green[700],
+      scaffoldBackgroundColor: const Color(0xFFFFFDE7), // Pale Yellow
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.blue[300],
+        backgroundColor: Colors.green[700],
         elevation: 0,
         centerTitle: true,
         titleTextStyle: const TextStyle(
@@ -17,7 +17,7 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blue[400],
+          backgroundColor: Colors.purple[600],
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -30,7 +30,7 @@ class AppTheme {
         ),
       ),
       colorScheme: ColorScheme.fromSwatch().copyWith(
-        secondary: Colors.lightBlueAccent,
+        secondary: Colors.purple[400],
       ),
     );
   }

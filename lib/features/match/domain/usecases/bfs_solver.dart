@@ -12,6 +12,12 @@ class BfsSolver {
     return await compute(_bfsCalculate, {'start': start, 'target': target});
   }
 
+  /// Synchronous version for use inside other isolates (like the pool generator)
+  /// pure Dart function, no external dependencies.
+  static int calculateMovesSync(int start, int target) {
+    return _bfsCalculate({'start': start, 'target': target});
+  }
+
   /// The heavy lifting function to be run in pure Dart isolate.
   static int _bfsCalculate(Map<String, int> args) {
     int start = args['start']!;

@@ -54,23 +54,29 @@ class _TowerAttemptModalState extends State<TowerAttemptModal> {
 
   Future<void> _finishSolve() async {
     setState(() => isSolving = true);
-    
-    bool success = await widget.controller.handleSolveTower(
-      widget.tower.id,
-      widget.tower.startValue,
-      moves,
-    );
 
-    if (success) {
-      Get.back(); // Close modal on success
-      Get.snackbar('Success', '+1 Score for your team!', 
-        backgroundColor: Colors.green[100],
-        colorText: Colors.green[800],
-        snackPosition: SnackPosition.TOP);
-    } else {
-      setState(() => isSolving = false);
-      Get.snackbar('Error', 'Failed to commit solve. Claim might have expired.',
-        backgroundColor: Colors.red[100], colorText: Colors.red[800]);
+    try {
+      bool success = await widget.controller.handleSolveTower(
+        widget.tower.id,
+        widget.tower.startValue,
+        moves,
+      ).timeout(const Duration(seconds: 5));
+
+      if (success) {
+        Get.back(); // Close modal on success
+        Get.snackbar('Success', '+1 Score for your team!', 
+          backgroundColor: Colors.green[100],
+          colorText: Colors.green[800],
+          snackPosition: SnackPosition.TOP);
+      } else {
+        if (mounted) setState(() => isSolving = false);
+        Get.snackbar('Error', 'Failed to commit solve. Claim might have expired.',
+          backgroundColor: Colors.red[100], colorText: Colors.red[800]);
+      }
+    } catch (e) {
+      if (mounted) setState(() => isSolving = false);
+      Get.snackbar('Network Error', 'Connection lost or timeout. Try again.',
+        backgroundColor: Colors.red[300], colorText: Colors.white, snackPosition: SnackPosition.BOTTOM);
     }
   }
 

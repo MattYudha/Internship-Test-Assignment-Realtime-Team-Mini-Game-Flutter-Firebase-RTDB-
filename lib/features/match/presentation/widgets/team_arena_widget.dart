@@ -3,6 +3,7 @@ import '../../domain/entities/team.dart';
 import '../../domain/entities/player.dart';
 import '../controllers/match_controller.dart';
 import 'tower_grid_widget.dart';
+import 'package:get/get.dart';
 
 class TeamArenaWidget extends StatelessWidget {
   final String teamId;
@@ -28,12 +29,9 @@ class TeamArenaWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Dynamic score calculation
-    int solvedCount = teamData.towers.values.where((t) => t.state == 'solved').length;
-
     return Container(
       padding: const EdgeInsets.all(8.0),
-      color: isMyTeam ? Colors.white : const Color(0xFFF0F4F8),
+      color: isMyTeam ? const Color(0xFFE8F5E9) : const Color(0xFFF1F8E9), // Pale Greens
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -46,7 +44,7 @@ class TeamArenaWidget extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: isMyTeam ? Colors.blue[800] : Colors.grey[700],
+                  color: Colors.green[900],
                 ),
               ),
               Container(
@@ -60,7 +58,7 @@ class TeamArenaWidget extends StatelessWidget {
                   'Target: $targetValue',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: accentColor[700],
+                    color: accentColor[800],
                   ),
                 ),
               ),
@@ -70,8 +68,67 @@ class TeamArenaWidget extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
           
+          const SizedBox(height: 8),
+
+          // Player Roster List with Active AFK Evaluation (Tied to _uiRefreshTimer)
+          GetBuilder<MatchController>(
+            id: 'tower_grid',
+            builder: (ctrl) {
+              final teamPlayers = players.values.where((p) => p.team == teamId).toList();
+              final now = DateTime.now().millisecondsSinceEpoch;
+
+              return SizedBox(
+                height: 40,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: teamPlayers.length,
+                  itemBuilder: (context, index) {
+                    final player = teamPlayers[index];
+                    final isAFK = (now - player.lastSeenAt) > 30000;
+                    
+                    return Opacity(
+                      opacity: isAFK ? 0.4 : 1.0,
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: isAFK ? Colors.grey : Colors.green),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.person,
+                              size: 16,
+                              color: isAFK ? Colors.grey : Colors.green[700],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              player.displayName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                decoration: isAFK ? TextDecoration.lineThrough : null,
+                              ),
+                            ),
+                            if (isAFK) ...[
+                              const SizedBox(width: 4),
+                              const Text('💤', style: TextStyle(fontSize: 12)),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            }
+          ),
+          
+          const SizedBox(height: 8),
+
           // Towers Grid
           Expanded(
             child: TowerGridWidget(
@@ -79,7 +136,7 @@ class TeamArenaWidget extends StatelessWidget {
               targetValue: targetValue,
               isMyTeam: isMyTeam,
               controller: controller,
-              accentColor: accentColor,
+              accentColor: Colors.purple, // Forcing purple aesthetic for towers
             ),
           ),
         ],
