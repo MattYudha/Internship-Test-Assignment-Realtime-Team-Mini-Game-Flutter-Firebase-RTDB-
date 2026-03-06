@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 class AppTheme {
   static ThemeData get lightTheme {
     return ThemeData(
-      primaryColor: Colors.green[700],
-      scaffoldBackgroundColor: const Color(0xFFFFFDE7), // Pale Yellow
-      appBarTheme: AppBarTheme(
-        backgroundColor: Colors.green[700],
+      primaryColor: const Color(0xFF388E3C), // Dark Green
+      scaffoldBackgroundColor: const Color(0xFFFAFAD2), // Pale Yellow / Light Goldenrod Yellow
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF388E3C), // Dark Green
         elevation: 0,
-        centerTitle: true,
-        titleTextStyle: const TextStyle(
+        centerTitle: false,
+        titleTextStyle: TextStyle(
           color: Colors.white,
-          fontSize: 20,
+          fontSize: 22,
           fontWeight: FontWeight.bold,
         ),
       ),

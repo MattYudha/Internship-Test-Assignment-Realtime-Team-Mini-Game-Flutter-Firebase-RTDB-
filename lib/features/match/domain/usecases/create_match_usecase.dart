@@ -5,7 +5,7 @@ class CreateMatchUseCase {
   
   CreateMatchUseCase(this.repository);
   
-  Future<String?> call(List<int> towerPool, int targetValue) async {
-    return await repository.createMatch(towerPool, targetValue);
+  Future<String?> call(List<int> towerPool, int targetValue, String hostUid) async {
+    return await repository.createMatch(towerPool, targetValue, hostUid);
   }
 }

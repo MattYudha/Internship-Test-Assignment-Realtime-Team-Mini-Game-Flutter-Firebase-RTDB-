@@ -13,7 +13,7 @@ class TeamArenaWidget extends StatelessWidget {
   final int targetValue;
   final bool isMyTeam;
   final MatchController controller;
-  final Color accentColor;
+  final MaterialColor accentColor;
 
   const TeamArenaWidget({
     super.key,
@@ -31,7 +31,7 @@ class TeamArenaWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(8.0),
-      color: isMyTeam ? const Color(0xFFE8F5E9) : const Color(0xFFF1F8E9), // Pale Greens
+      color: Colors.transparent, // Let global MatchPage arena wrapper show through
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -39,16 +39,21 @@ class TeamArenaWidget extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                teamName,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green[900],
+              Expanded(
+                child: Text(
+                  teamName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[900],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: accentColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(16),
@@ -58,13 +63,14 @@ class TeamArenaWidget extends StatelessWidget {
                   'Target: $targetValue',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
+                    fontSize: 12,
                     color: accentColor[800],
                   ),
                 ),
               ),
               Text(
                 'Score: ${teamData.score}',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ],
           ),

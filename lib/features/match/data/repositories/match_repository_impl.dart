@@ -21,7 +21,7 @@ class MatchRepositoryImpl implements MatchRepository {
   }
 
   @override
-  Future<String?> createMatch(List<int> towerPool, int targetValue) async {
+  Future<String?> createMatch(List<int> towerPool, int targetValue, String hostUid) async {
     final String myGeneratedId = _db.ref('matches').push().key ?? DateTime.now().millisecondsSinceEpoch.toString();
     
     // BUILD FIRST: Construct entire payload
@@ -41,6 +41,7 @@ class MatchRepositoryImpl implements MatchRepository {
         'poolIndexA': 19, // Because 0-19 are mapped to initial towers
         'poolIndexB': 19,
         'teamCounts': {'teamA': 0, 'teamB': 0},
+        'hostUid': hostUid,
       },
       'teams': {
         'teamA': {'score': 0, 'towers': initialTowers},
@@ -139,6 +140,26 @@ class MatchRepositoryImpl implements MatchRepository {
   }
 
   @override
+  Future<void> addBot(String matchId, String teamId, String botUid, String botName) async {
+    // Forcefully join a specific team. We transact to safely increment team count.
+    final countsRef = _matchRef(matchId).child('meta/teamCounts');
+    await countsRef.runTransaction((Object? currentData) {
+      if (currentData == null) return Transaction.success({teamId: 1});
+      Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
+      counts[teamId] = (counts[teamId] ?? 0) + 1;
+      return Transaction.success(counts);
+    });
+
+    // Write player profile
+    await _matchRef(matchId).child('players/$botUid').set({
+      'displayName': botName,
+      'team': teamId,
+      'lastSeenAt': ServerValue.timestamp, // Will be continually updated by Server
+      'stats': {'towersSolved': 0, 'totalMoves': 0}
+    });
+  }
+
+  @override
   Future<bool> claimTower(String matchId, String teamId, String towerId, String playerId) async {
     final towerRef = _matchRef(matchId).child('teams/$teamId/towers/$towerId');
     
@@ -157,7 +178,7 @@ class MatchRepositoryImpl implements MatchRepository {
         if (state == 'available' || (state == 'claimed' && currentClaimExp != null && currentClaimExp < now)) {
           towerData['state'] = 'claimed';
           towerData['claimedBy'] = playerId;
-          towerData['claimExpiresAt'] = now + 15000; // 15 seconds from now
+          towerData['claimExpiresAt'] = now + 45000; // 45 seconds from now (gives humans more time)
           return Transaction.success(towerData);
         }
         
@@ -183,10 +204,10 @@ class MatchRepositoryImpl implements MatchRepository {
         Map<String, dynamic> towerData = Map<String, dynamic>.from(currentData as Map);
         final state = towerData['state'];
         final claimedBy = towerData['claimedBy'];
-        final currentClaimExp = towerData['claimExpiresAt'] as int?;
-        final now = DateTime.now().millisecondsSinceEpoch;
 
-        if (state == 'claimed' && claimedBy == playerId && (currentClaimExp != null && currentClaimExp >= now)) {
+        // Allow solve if state is claimed AND player is still the claim owner.
+        // Even if 'claimExpiresAt' has passed, as long as no one else stole it, accept the solve.
+        if (state == 'claimed' && claimedBy == playerId) {
           towerData['state'] = 'solved';
           towerData['solvedBy'] = playerId;
           towerData['movesTaken'] = movesTaken;
@@ -224,8 +245,9 @@ class MatchRepositoryImpl implements MatchRepository {
         if (poolSnapshot.exists) {
           final int newStartValue = (poolSnapshot.value as int?) ?? 10;
           
-          // Reset the tower slot with the new value so the grid is repopulated
-          await towerRef.set({
+          // ADD a new tower slot to the end of the list instead of overwriting the solved one
+          final String newTowerId = 'tower_$newIndex';
+          await matchRef.child('teams/$teamId/towers/$newTowerId').set({
             'startValue': newStartValue,
             'state': 'available',
             'claimedBy': null,

@@ -6,6 +6,11 @@ import 'core/theme/app_theme.dart';
 import 'core/di/init_binding.dart';
 import 'features/match/presentation/pages/lobby_screen.dart';
 import 'features/match/presentation/pages/match_page.dart';
+import 'features/match/data/repositories/match_repository_impl.dart';
+import 'features/auth/domain/repositories/auth_repository.dart';
+import 'features/match/domain/usecases/claim_tower_usecase.dart';
+import 'features/match/domain/usecases/solve_tower_usecase.dart';
+import 'features/match/presentation/controllers/match_controller.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,12 +44,18 @@ class RealtimeMiniGameApp extends StatelessWidget {
         ),
         GetPage(
           name: '/match',
-          // MatchPage receives injected arguments
-          page: () => MatchPage(
-            matchId: Get.arguments['matchId'],
-            teamId: Get.arguments['teamId'],
-            playerId: Get.arguments['playerId'],
-          ),
+          binding: BindingsBuilder(() {
+            final args = Get.arguments as Map<String, dynamic>? ?? {};
+            Get.lazyPut(() => MatchController(
+              Get.find<MatchRepositoryImpl>(),
+              Get.find<AuthRepository>(),
+              Get.find<ClaimTowerUseCase>(),
+              Get.find<SolveTowerUseCase>(),
+              args['matchId'] ?? '',
+              args['teamId'] ?? '',
+            ));
+          }),
+          page: () => const MatchPage(),
         ),
       ],
     );

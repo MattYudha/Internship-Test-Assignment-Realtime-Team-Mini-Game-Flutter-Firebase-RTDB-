@@ -44,6 +44,7 @@ class MatchMeta {
   final int targetValue;
   final int poolIndexA;
   final int poolIndexB;
+  final String? hostUid;
 
   MatchMeta({
     required this.status,
@@ -52,6 +53,7 @@ class MatchMeta {
     required this.targetValue,
     required this.poolIndexA,
     required this.poolIndexB,
+    this.hostUid,
   });
 
   factory MatchMeta.fromJson(Map<dynamic, dynamic> json) {
@@ -62,6 +64,7 @@ class MatchMeta {
       targetValue: json['targetValue'] ?? 1000,
       poolIndexA: json['poolIndexA'] ?? 0,
       poolIndexB: json['poolIndexB'] ?? 0,
+      hostUid: json['hostUid'],
     );
   }
 }

@@ -7,6 +7,7 @@ import '../../domain/usecases/solve_tower_usecase.dart';
 import '../../domain/usecases/bfs_solver.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/match_repository.dart';
+import '../../domain/services/bot_simulation_service.dart';
 
 class MatchController extends GetxController {
   final MatchRepository _matchRepo;
@@ -32,13 +33,17 @@ class MatchController extends GetxController {
   Timer? _countdownTimer;
   Timer? _uiRefreshTimer; // For proactive AFK visual release
 
+  BotSimulationService? botService;
+
   final RxInt remainingSeconds = 0.obs;
 
   String get currentUid => _authRepo.getCurrentUid() ?? '';
+  bool get isHost => liveMatch.value?.meta.hostUid == currentUid;
 
   @override
   void onInit() {
     super.onInit();
+    botService = BotSimulationService(_matchRepo, matchId);
     _startMatchStream();
     _startHeartbeat();
     _startUiRefreshTimer();
@@ -47,6 +52,7 @@ class MatchController extends GetxController {
   void _startMatchStream() {
     _matchSubscription = _matchRepo.streamMatch(matchId).listen((data) {
       liveMatch.value = data;
+      if (data != null) botService?.updateMatchState(data);
       _updateCountdown(data);
     });
   }
@@ -85,6 +91,7 @@ class MatchController extends GetxController {
 
   @override
   void onClose() {
+    botService?.stopSimulation();
     _matchSubscription?.cancel();
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();

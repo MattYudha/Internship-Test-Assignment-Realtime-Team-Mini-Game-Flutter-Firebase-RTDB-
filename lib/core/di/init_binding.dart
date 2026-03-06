@@ -1,14 +1,14 @@
 import 'package:get/get.dart';
-import '../../auth/domain/repositories/auth_repository.dart';
-import '../data/repositories/match_repository_impl.dart';
-import '../../auth/data/repositories/auth_repository_impl.dart';
-import '../domain/usecases/create_match_usecase.dart';
-import '../domain/usecases/join_match_usecase.dart';
-import '../domain/usecases/generate_tower_pool_usecase.dart';
-import '../presentation/controllers/lobby_controller.dart';
-import '../domain/usecases/solve_tower_usecase.dart';
-import '../domain/usecases/claim_tower_usecase.dart';
-import '../presentation/controllers/match_controller.dart';
+import '../../features/auth/domain/repositories/auth_repository.dart';
+import '../../features/match/data/repositories/match_repository_impl.dart';
+import '../../features/auth/data/repositories/auth_repository_impl.dart';
+import '../../features/match/domain/usecases/create_match_usecase.dart';
+import '../../features/match/domain/usecases/join_match_usecase.dart';
+import '../../features/match/domain/usecases/generate_tower_pool_usecase.dart';
+import '../../features/match/presentation/controllers/lobby_controller.dart';
+import '../../features/match/domain/usecases/solve_tower_usecase.dart';
+import '../../features/match/domain/usecases/claim_tower_usecase.dart';
+import '../../features/match/presentation/controllers/match_controller.dart';
 
 class InitBinding extends Bindings {
   @override

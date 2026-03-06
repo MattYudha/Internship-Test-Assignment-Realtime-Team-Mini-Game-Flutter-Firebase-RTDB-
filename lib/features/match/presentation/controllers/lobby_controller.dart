@@ -1,9 +1,9 @@
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
-import '../../auth/domain/repositories/auth_repository.dart';
-import '../domain/usecases/create_match_usecase.dart';
-import '../domain/usecases/join_match_usecase.dart';
-import '../domain/usecases/generate_tower_pool_usecase.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../domain/usecases/create_match_usecase.dart';
+import '../../domain/usecases/join_match_usecase.dart';
+import '../../domain/usecases/generate_tower_pool_usecase.dart';
 
 class LobbyController extends GetxController {
   final AuthRepository authRepo;
@@ -47,7 +47,7 @@ class LobbyController extends GetxController {
 
       loadingMessage.value = 'Looking for an active match...';
       // ATTEMPT 1: Join an existing waiting match
-      String? joinResult = await joinMatchUseCase(user.id, name);
+      String? joinResult = await joinMatchUseCase(user, name);
 
       if (joinResult == null) {
         // Queue was empty. We must become the Host.
@@ -57,26 +57,34 @@ class LobbyController extends GetxController {
         final towerPool = await generateTowerPoolUseCase(); 
         
         loadingMessage.value = 'Uploading arena to server...';
+        print('Tower pool generated with length: ${towerPool.length}');
+        
         // Try to create and win the queue
-        String? newMatchId = await createMatchUseCase(towerPool, 1000);
+        String? newMatchId = await createMatchUseCase(towerPool, 1000, user);
 
         if (newMatchId == null) {
           // We LOST the optimistic concurrency race. Someone else built a match in that exact microsecond window.
           // Retry joining immediately.
           loadingMessage.value = 'Arena collision detected. Redirecting to winning match...';
-          joinResult = await joinMatchUseCase(user.id, name);
+          joinResult = await joinMatchUseCase(user, name);
           
           if (joinResult == null) {
               throw Exception('Critical matchmaking collision. Please try again.');
           }
         } else {
+          print('We WON the optimistic creation. Match ID: $newMatchId');
           // We WON the optimistic creation. 
           // We must now insert ourselves as the first player (Host -> Team A usually)
           loadingMessage.value = 'Arena secured. Joining...';
-          joinResult = await joinMatchUseCase(user.id, name);
-          if (joinResult == null) throw Exception('Failed to join our own generated match.');
+          joinResult = await joinMatchUseCase(user, name);
+          if (joinResult == null) {
+            print('Failed to join our own generated match.');
+            throw Exception('Failed to join our own generated match.');
+          }
         }
       }
+
+      print('Join result: $joinResult');
 
       // At this point joinResult is definitely in format: "matchId|teamA"
       final parts = joinResult.split('|');
@@ -87,7 +95,7 @@ class LobbyController extends GetxController {
       Get.offAllNamed('/match', arguments: {
         'matchId': matchId,
         'teamId': teamId,
-        'playerId': user.id,
+        'playerId': user,
       });
 
     } catch (e) {
