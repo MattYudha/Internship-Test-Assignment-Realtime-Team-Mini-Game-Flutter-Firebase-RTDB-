@@ -1,28 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:get/get.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
-
-// Placeholder screen before actual match screen is implemented
-class LobbyScreen extends StatelessWidget {
-  const LobbyScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Mini Tower Lobby')),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () {
-            // Get.toNamed('/match');
-          },
-          child: const Text('Start Connecting'),
-        ),
-      ),
-    );
-  }
-}
+import 'core/di/init_binding.dart';
+import 'features/match/presentation/pages/lobby_screen.dart';
+import 'features/match/presentation/pages/match_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,20 +18,34 @@ void main() async {
     debugPrint("Firebase init failed (expected with dummy keys): $e");
   }
 
-  runApp(const MyApp());
+  runApp(const RealtimeMiniGameApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class RealtimeMiniGameApp extends StatelessWidget {
+  const RealtimeMiniGameApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return GetMaterialApp(
-      title: 'Realtime Tower Game',
+      title: 'Realtime Tower Mini-Game',
       theme: AppTheme.lightTheme,
+      debugShowCheckedModeBanner: false,
+      initialBinding: InitBinding(), // Initialize Core Injectables
       initialRoute: '/lobby',
       getPages: [
-        GetPage(name: '/lobby', page: () => const LobbyScreen()),
+        GetPage(
+          name: '/lobby',
+          page: () => LobbyScreen(),
+        ),
+        GetPage(
+          name: '/match',
+          // MatchPage receives injected arguments
+          page: () => MatchPage(
+            matchId: Get.arguments['matchId'],
+            teamId: Get.arguments['teamId'],
+            playerId: Get.arguments['playerId'],
+          ),
+        ),
       ],
     );
   }

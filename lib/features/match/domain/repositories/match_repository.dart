@@ -1,6 +1,12 @@
 import '../entities/match.dart';
 
 abstract class MatchRepository {
+  /// Create a complete match node optimistically
+  Future<String?> createMatch(List<int> towerPool, int targetValue);
+
+  /// Join a match by UID, handles auto-balancing via teamCounts transaction
+  Future<String?> joinMatch(String playerId, String displayName);
+
   /// Stream the live match data
   Stream<MatchData?> streamMatch(String matchId);
   

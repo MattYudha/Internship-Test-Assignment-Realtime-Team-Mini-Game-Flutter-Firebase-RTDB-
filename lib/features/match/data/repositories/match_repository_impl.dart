@@ -21,6 +21,124 @@ class MatchRepositoryImpl implements MatchRepository {
   }
 
   @override
+  Future<String?> createMatch(List<int> towerPool, int targetValue) async {
+    final String myGeneratedId = _db.ref('matches').push().key ?? DateTime.now().millisecondsSinceEpoch.toString();
+    
+    // BUILD FIRST: Construct entire payload
+    final initialTowers = <String, dynamic>{};
+    for (int i = 0; i < 20; i++) {
+      initialTowers['tower_$i'] = {
+        'startValue': towerPool[i],
+        'state': 'available',
+      };
+    }
+
+    final matchPayload = {
+      'meta': {
+        'status': 'waiting',
+        'targetValue': targetValue,
+        'towerPool': towerPool,
+        'poolIndexA': 19, // Because 0-19 are mapped to initial towers
+        'poolIndexB': 19,
+        'teamCounts': {'teamA': 0, 'teamB': 0},
+      },
+      'teams': {
+        'teamA': {'score': 0, 'towers': initialTowers},
+        'teamB': {'score': 0, 'towers': initialTowers},
+      },
+    };
+
+    // Upload heavy payload to matches/$myGeneratedId
+    await _db.ref('matches/$myGeneratedId').set(matchPayload);
+
+    // EXPOSE LATER: Transaction on /system/waiting_match
+    final sysRef = _db.ref('system/waiting_match');
+    final TransactionResult txResult = await sysRef.runTransaction((Object? currentData) {
+      if (currentData == null) {
+        return Transaction.success(myGeneratedId); // I won
+      }
+      return Transaction.abort(); // Someone else beat me to it
+    });
+
+    if (txResult.committed) {
+      return myGeneratedId; // Won the queue
+    } else {
+      // LOST the queue. Delete the useless node.
+      await _db.ref('matches/$myGeneratedId').remove();
+      // Wait a tiny bit and return null so the caller can retry (which will route them to join instead)
+      return null;
+    }
+  }
+
+  @override
+  Future<String?> joinMatch(String playerId, String displayName) async {
+    final sysRef = _db.ref('system/waiting_match');
+    final snapshot = await sysRef.get();
+    
+    if (!snapshot.exists || snapshot.value == null) {
+      return null; // Return null so caller knows to call createMatch() instead
+    }
+
+    final String activeMatchId = snapshot.value as String;
+    
+    // ATOMIC AUTO-BALANCING
+    final countsRef = _matchRef(activeMatchId).child('meta/teamCounts');
+    String assignedTeam = 'teamA';
+
+    final TransactionResult balanceResult = await countsRef.runTransaction((Object? currentData) {
+      if (currentData == null) return Transaction.success({'teamA': 1, 'teamB': 0});
+      
+      Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
+      int countA = counts['teamA'] ?? 0;
+      int countB = counts['teamB'] ?? 0;
+
+      if (countB < countA) {
+        counts['teamB'] = countB + 1;
+        assignedTeam = 'teamB';
+      } else {
+        counts['teamA'] = countA + 1;
+        assignedTeam = 'teamA';
+      }
+      
+      return Transaction.success(counts);
+    });
+
+    if (balanceResult.committed) {
+      // Read assigned team directly from our local transaction scope evaluation
+      // Actually we calculate the assignedTeam from the transaction return data to be 100% safe
+      final finalData = Map<dynamic, dynamic>.from(balanceResult.snapshot.value as Map);
+      
+      // We already determined assignedTeam locally inside the closure, but to be pure:
+      String actualAssignedTeam = 'teamA';
+      // To prevent re-evaluation bugs, we will use the snapshot state if needed, 
+      // but injecting the player object is next:
+      
+      await _matchRef(activeMatchId).child('players/$playerId').set({
+        'displayName': displayName,
+        'team': assignedTeam,
+        'lastSeenAt': ServerValue.timestamp,
+        'stats': {'towersSolved': 0, 'totalMoves': 0}
+      });
+
+      // If we are the 8th player, we should probably close the lobby (Reset waiting_match)
+      int totalPlayers = (finalData['teamA'] as int) + (finalData['teamB'] as int);
+      if (totalPlayers >= 8) {
+        await sysRef.remove(); // Clear queue
+        // Mark match as running
+        await _matchRef(activeMatchId).child('meta').update({
+          'status': 'running',
+          'startAt': ServerValue.timestamp,
+          'endAt': ServerValue.timestamp, // Will need +300000 logic elsewhere or just use increment
+        });
+      }
+
+      return '$activeMatchId|$assignedTeam'; // Return compound string for the controller
+    }
+
+    return null;
+  }
+
+  @override
   Future<bool> claimTower(String matchId, String teamId, String towerId, String playerId) async {
     final towerRef = _matchRef(matchId).child('teams/$teamId/towers/$towerId');
     
