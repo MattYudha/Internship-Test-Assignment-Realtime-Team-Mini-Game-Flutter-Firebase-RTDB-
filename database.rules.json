@@ -1,0 +1,35 @@
+{
+    "rules": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "matches": {
+            "$matchId": {
+                "meta": {
+                    "poolIndexA": {
+                        ".validate": "!data.exists() || (newData.isNumber() && newData.val() == data.val() + 1)"
+                    },
+                    "poolIndexB": {
+                        ".validate": "!data.exists() || (newData.isNumber() && newData.val() == data.val() + 1)"
+                    }
+                },
+                "teams": {
+                    "$teamId": {
+                        "score": {
+                            ".validate": "!data.exists() || (newData.isNumber() && newData.val() == data.val() + 1)"
+                        },
+                        "towers": {
+                            "$towerId": {
+                                "claimedBy": {
+                                    ".validate": "!newData.exists() || newData.val() == null || newData.val() == auth.uid || newData.val().beginsWith('bot_')"
+                                },
+                                "solvedBy": {
+                                    ".validate": "!newData.exists() || newData.val() == null || newData.val() == auth.uid || newData.val().beginsWith('bot_')"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

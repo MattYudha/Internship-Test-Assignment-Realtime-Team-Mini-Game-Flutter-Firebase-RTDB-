@@ -150,19 +150,25 @@ class TowerGridWidget extends StatelessWidget {
       child: Container(
         width: 50,
         margin: const EdgeInsets.symmetric(horizontal: 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            // Top Indicator
-            if (isSolved && tower.id == lastSolvedTower?.id)
-              _buildStrokedCar(24.0)
-            else if (isClaimed)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8.0, top: 10.0), // Center in 24px space
-                child: BouncingDotsIndicator(color: Colors.lightBlueAccent, size: 6),
-              )
-            else
-              const SizedBox(height: 24),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: Column(
+            key: ValueKey('${tower.id}_${tower.state}'),
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Top Indicator
+              if (isSolved && tower.id == lastSolvedTower?.id)
+                _buildStrokedCar(24.0)
+              else if (isClaimed)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0, top: 10.0), // Center in 24px space
+                  child: BouncingDotsIndicator(color: Colors.lightBlueAccent, size: 6),
+                )
+              else
+                const SizedBox(height: 24),
             
             const SizedBox(height: 4),
             
@@ -238,6 +244,7 @@ class TowerGridWidget extends StatelessWidget {
                   ),
             ),
           ],
+        ),
         ),
       ),
     );

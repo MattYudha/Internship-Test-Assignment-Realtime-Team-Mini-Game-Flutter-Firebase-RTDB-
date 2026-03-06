@@ -68,9 +68,19 @@ class TeamArenaWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                'Score: ${teamData.score}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 500),
+                transitionBuilder: (child, animation) {
+                  return ScaleTransition(
+                    scale: CurvedAnimation(parent: animation, curve: Curves.elasticOut),
+                    child: child,
+                  );
+                },
+                child: Text(
+                  'Score: ${teamData.score}',
+                  key: ValueKey(teamData.score),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),

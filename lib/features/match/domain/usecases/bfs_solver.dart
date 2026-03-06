@@ -8,6 +8,14 @@ class BfsSolver {
     // If we are already at the target, 0 moves needed.
     if (start == target) return 0;
     
+    // FAST FAIL HEURISTICS O(1)
+    // 1. Strictly sequence check: Ops are +10 and *2. They only increase (or maintain) the value.
+    if (start > target) return -1;
+    
+    // 2. Parity check (Prof's Law): Even + 10 = Even, Even * 2 = Even.
+    // If start is Even, it can NEVER reach an Odd target.
+    if (start % 2 == 0 && target % 2 != 0) return -1;
+    
     // Spawn background isolate
     return await compute(_bfsCalculate, {'start': start, 'target': target});
   }
@@ -15,6 +23,9 @@ class BfsSolver {
   /// Synchronous version for use inside other isolates (like the pool generator)
   /// pure Dart function, no external dependencies.
   static int calculateMovesSync(int start, int target) {
+    if (start == target) return 0;
+    if (start > target) return -1;
+    if (start % 2 == 0 && target % 2 != 0) return -1;
     return _bfsCalculate({'start': start, 'target': target});
   }
 

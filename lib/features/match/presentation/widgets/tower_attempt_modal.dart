@@ -19,16 +19,33 @@ class TowerAttemptModal extends StatefulWidget {
   State<TowerAttemptModal> createState() => _TowerAttemptModalState();
 }
 
-class _TowerAttemptModalState extends State<TowerAttemptModal> {
+class _TowerAttemptModalState extends State<TowerAttemptModal> with SingleTickerProviderStateMixin {
   late int currentValue;
   int moves = 0;
   bool isSolving = false;
   bool isUnreachable = false;
 
+  late AnimationController _successAnimController;
+  late Animation<double> _scaleAnimation;
+
   @override
   void initState() {
     super.initState();
     currentValue = widget.tower.startValue;
+
+    _successAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.5).animate(
+      CurvedAnimation(parent: _successAnimController, curve: Curves.elasticOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _successAnimController.dispose();
+    super.dispose();
   }
 
   void _applyOp(int type) {
@@ -63,6 +80,10 @@ class _TowerAttemptModalState extends State<TowerAttemptModal> {
       ).timeout(const Duration(seconds: 5));
 
       if (success) {
+        if (mounted) {
+          _successAnimController.forward();
+          await Future.delayed(const Duration(milliseconds: 700));
+        }
         Get.back(); // Close modal on success
         Get.snackbar('Success', '+1 Score for your team!', 
           backgroundColor: Colors.green[100],
@@ -198,16 +219,19 @@ class _TowerAttemptModalState extends State<TowerAttemptModal> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         // The floating value Pill
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(
-                            color: isUnreachable ? Colors.red : const Color(0xFFAB47BC), // Lighter Purple
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            isUnreachable ? 'OUT OF BOUNDS' : '$currentValue',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24),
+                        ScaleTransition(
+                          scale: _scaleAnimation,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: isUnreachable ? Colors.red : const Color(0xFFAB47BC), // Lighter Purple
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              isUnreachable ? 'OUT OF BOUNDS' : '$currentValue',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24),
+                            ),
                           ),
                         ),
                         // Dynamic bar
