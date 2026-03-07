@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/entities/tower.dart';
@@ -7,7 +8,7 @@ import '../../domain/usecases/solve_tower_usecase.dart';
 import '../../domain/usecases/bfs_solver.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/match_repository.dart';
-import '../../domain/services/bot_simulation_service.dart';
+import '../../domain/usecases/bot_service.dart';
 
 class MatchController extends GetxController {
   final MatchRepository _matchRepo;
@@ -33,7 +34,7 @@ class MatchController extends GetxController {
   Timer? _countdownTimer;
   Timer? _uiRefreshTimer; // For proactive AFK visual release
 
-  BotSimulationService? botService;
+  BotService? botService;
 
   final RxInt remainingSeconds = 0.obs;
 
@@ -43,7 +44,7 @@ class MatchController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    botService = BotSimulationService(_matchRepo, matchId);
+    botService = BotService(_matchRepo, matchId);
     _startMatchStream();
     _startHeartbeat();
     _startUiRefreshTimer();
@@ -69,6 +70,23 @@ class MatchController extends GetxController {
           remainingSeconds.value--;
         } else {
           timer.cancel();
+          
+          // Prof Feedback: Detect if Cloud Function failed to run
+          if (liveMatch.value?.meta.status == 'running') {
+            // Delay slightly to give backend a chance
+            Future.delayed(const Duration(seconds: 2), () {
+              if (liveMatch.value?.meta.status == 'running') {
+                Get.snackbar(
+                  'Backend Warning',
+                  'Match lifecycle automation appears offline (Functions emulator / backend not responding).',
+                  backgroundColor: Colors.orange[300],
+                  colorText: Colors.black87,
+                  duration: const Duration(seconds: 8), // Longer duration so it's readable
+                  isDismissible: true,
+                );
+              }
+            });
+          }
         }
       });
     }

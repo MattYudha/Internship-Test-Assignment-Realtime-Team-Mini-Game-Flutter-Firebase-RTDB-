@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import '../../domain/services/bot_simulation_service.dart';
+import '../../domain/usecases/bot_service.dart';
 
 class DebugBotPanel extends StatefulWidget {
-  final BotSimulationService botService;
+  final BotService botService;
 
   const DebugBotPanel({super.key, required this.botService});
 
@@ -65,13 +65,12 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
           
           const SizedBox(height: 16),
           
-          Row(
+          Obx(() => Row(
             children: [
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: widget.botService.botCount >= 6 ? null : () async {
                     await widget.botService.spawnBot('teamA', _selectedSkill);
-                    setState(() {});
                   },
                   icon: const Icon(Icons.add),
                   label: const Text('Add Team A'),
@@ -83,7 +82,6 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
                 child: ElevatedButton.icon(
                   onPressed: widget.botService.botCount >= 6 ? null : () async {
                     await widget.botService.spawnBot('teamB', _selectedSkill);
-                    setState(() {});
                   },
                   icon: const Icon(Icons.add),
                   label: const Text('Add Team B'),
@@ -91,27 +89,25 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
                 ),
               ),
             ],
-          ),
+          )),
           
           const SizedBox(height: 8),
           Center(
-            child: Text(
+            child: Obx(() => Text(
               '${widget.botService.botCount} / 6 Bots Spawned',
               style: TextStyle(color: Colors.grey[700], fontSize: 12),
-            ),
+            )),
           ),
           
           const SizedBox(height: 24),
 
-          ElevatedButton.icon(
+          Obx(() => ElevatedButton.icon(
             onPressed: widget.botService.botCount == 0 ? null : () {
-              setState(() {
-                if (widget.botService.isRunning) {
-                  widget.botService.stopSimulation();
-                } else {
-                  widget.botService.startSimulation();
-                }
-              });
+              if (widget.botService.isRunning) {
+                widget.botService.stopSimulation();
+              } else {
+                widget.botService.startSimulation();
+              }
             },
             icon: Icon(widget.botService.isRunning ? Icons.stop : Icons.play_arrow),
             label: Text(widget.botService.isRunning ? 'STOP SIMULATION' : 'START SIMULATION'),
@@ -119,7 +115,7 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
               backgroundColor: widget.botService.isRunning ? Colors.red[100] : Colors.green[100],
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
-          ),
+          )),
         ],
       ),
     );

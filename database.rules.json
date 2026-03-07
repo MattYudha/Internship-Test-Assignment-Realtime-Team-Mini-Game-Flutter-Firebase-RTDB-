@@ -20,10 +20,10 @@
                         "towers": {
                             "$towerId": {
                                 "claimedBy": {
-                                    ".validate": "!newData.exists() || newData.val() == null || newData.val() == auth.uid || newData.val().beginsWith('bot_')"
+                                    ".validate": "!newData.exists() || newData.val() == null || newData.val().beginsWith('bot_') || (newData.val() == auth.uid && root.child('matches').child($matchId).child('players').child(auth.uid).child('team').val() === $teamId)"
                                 },
                                 "solvedBy": {
-                                    ".validate": "!newData.exists() || newData.val() == null || newData.val() == auth.uid || newData.val().beginsWith('bot_')"
+                                    ".validate": "!newData.exists() || newData.val() == null || newData.val().beginsWith('bot_') || (newData.val() == auth.uid && root.child('matches').child($matchId).child('players').child(auth.uid).child('team').val() === $teamId)"
                                 }
                             }
                         }

@@ -3,6 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/entities/tower.dart';
 import '../../domain/repositories/match_repository.dart';
+import '../../domain/entities/join_match_result.dart';
 
 class MatchRepositoryImpl implements MatchRepository {
   final FirebaseDatabase _db;
@@ -72,26 +73,71 @@ class MatchRepositoryImpl implements MatchRepository {
   }
 
   @override
-  Future<String?> joinMatch(String playerId, String displayName) async {
+  Future<JoinMatchResult> joinMatch(String playerId, String displayName) async {
     final sysRef = _db.ref('system/waiting_match');
     final snapshot = await sysRef.get();
     
     if (!snapshot.exists || snapshot.value == null) {
-      return null; // Return null so caller knows to call createMatch() instead
+      return const JoinMatchResult(status: JoinMatchStatus.error, message: 'No active match found');
     }
 
     final String activeMatchId = snapshot.value as String;
     
-    // ATOMIC AUTO-BALANCING
-    final countsRef = _matchRef(activeMatchId).child('meta/teamCounts');
-    String assignedTeam = 'teamA';
+    // --- 1. Check Match Status (Prof's Rule #11) ---
+    final statusSnap = await _matchRef(activeMatchId).child('meta/status').get();
+    final currentStatus = statusSnap.exists ? statusSnap.value as String : 'waiting';
+    
+    if (currentStatus == 'ended') {
+      // 10️⃣ Cara yang lebih rapi: Saat match selesai meta.status = ended, reset system/waiting_match = null
+      await sysRef.remove();
+      return const JoinMatchResult(status: JoinMatchStatus.error, message: 'Match has ended');
+    }
 
+    // --- 2. Reconnect System (Prof's Rule #14) ---
+    // 12️⃣ Reopen app -> reconnect ke match
+    final playerSnapshot = await _matchRef(activeMatchId).child('players/$playerId').get();
+    if (playerSnapshot.exists) {
+      final playerData = Map<dynamic, dynamic>.from(playerSnapshot.value as Map);
+      
+      // Update displayName and lastSeenAt on reconnect
+      await _matchRef(activeMatchId).child('players/$playerId').update({
+        'displayName': displayName,
+        'lastSeenAt': ServerValue.timestamp,
+      });
+
+      return JoinMatchResult(
+        status: JoinMatchStatus.reconnected,
+        matchId: activeMatchId,
+        teamId: playerData['team'],
+      );
+    }
+
+    // UID DOES NOT EXIST IN MATCH.
+    if (currentStatus == 'running') {
+      // Reject Late Join! (Prof's Rule)
+      return const JoinMatchResult(status: JoinMatchStatus.lateJoinRejected, message: 'Match is already running.');
+    }
+
+    // --- 3. New Player Join Logic (ATOMIC SLOT ACQUISITION) ---
+    final countsRef = _matchRef(activeMatchId).child('meta/teamCounts');
+    String assignedTeam = '';
+    bool isMatchFull = false;
+
+    // Prof's Rule: Atomic capacity check + increment selection
     final TransactionResult balanceResult = await countsRef.runTransaction((Object? currentData) {
-      if (currentData == null) return Transaction.success({'teamA': 1, 'teamB': 0});
+      if (currentData == null) {
+        assignedTeam = 'teamA';
+        return Transaction.success({'teamA': 1, 'teamB': 0});
+      }
       
       Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
       int countA = counts['teamA'] ?? 0;
       int countB = counts['teamB'] ?? 0;
+
+      if (countA + countB >= 8) {
+        isMatchFull = true;
+        return Transaction.abort(); // ATOMICALLY REJECT IF FULL
+      }
 
       if (countB < countA) {
         counts['teamB'] = countB + 1;
@@ -104,39 +150,74 @@ class MatchRepositoryImpl implements MatchRepository {
       return Transaction.success(counts);
     });
 
-    if (balanceResult.committed) {
-      // Read assigned team directly from our local transaction scope evaluation
-      // Actually we calculate the assignedTeam from the transaction return data to be 100% safe
-      final finalData = Map<dynamic, dynamic>.from(balanceResult.snapshot.value as Map);
-      
-      // We already determined assignedTeam locally inside the closure, but to be pure:
-      String actualAssignedTeam = 'teamA';
-      // To prevent re-evaluation bugs, we will use the snapshot state if needed, 
-      // but injecting the player object is next:
-      
-      await _matchRef(activeMatchId).child('players/$playerId').set({
+    if (!balanceResult.committed) {
+      if (isMatchFull) {
+        return const JoinMatchResult(status: JoinMatchStatus.matchFull, message: 'Match is full.');
+      }
+      return const JoinMatchResult(status: JoinMatchStatus.error, message: 'Failed to join match due to traffic.');
+    }
+
+    // Slot secured! Now write the player node and optionally start the match
+    final finalData = Map<dynamic, dynamic>.from(balanceResult.snapshot.value as Map);
+    
+    // Multi-path update for atomicity of player write + match start
+    Map<String, dynamic> updates = {
+      'players/$playerId': {
         'displayName': displayName,
         'team': assignedTeam,
         'lastSeenAt': ServerValue.timestamp,
         'stats': {'towersSolved': 0, 'totalMoves': 0}
-      });
-
-      // If we are the 8th player, we should probably close the lobby (Reset waiting_match)
-      int totalPlayers = (finalData['teamA'] as int) + (finalData['teamB'] as int);
-      if (totalPlayers >= 8) {
-        await sysRef.remove(); // Clear queue
-        // Mark match as running
-        await _matchRef(activeMatchId).child('meta').update({
-          'status': 'running',
-          'startAt': ServerValue.timestamp,
-          'endAt': ServerValue.timestamp, // Will need +300000 logic elsewhere or just use increment
-        });
       }
+    };
 
-      return '$activeMatchId|$assignedTeam'; // Return compound string for the controller
+    // If we hit capacity (8), mark match as running
+    int totalPlayers = (finalData['teamA'] as int) + (finalData['teamB'] as int);
+    if (totalPlayers >= 8 && currentStatus != 'running') {
+      // WE DO NOT DELETE sysRef HERE ANYMORE.
+      // It stays alive so disconnected players can reconnect while status == 'running'
+      updates['meta/status'] = 'running';
+      updates['meta/startAt'] = ServerValue.timestamp;
     }
 
-    return null;
+    await _matchRef(activeMatchId).update(updates);
+
+    return JoinMatchResult(
+      status: JoinMatchStatus.joined,
+      matchId: activeMatchId,
+      teamId: assignedTeam,
+    );
+  }
+
+  @override
+  Future<void> debugCleanupGhostPlayer(String playerId) async {
+    final sysRef = _db.ref('system/waiting_match');
+    final snapshot = await sysRef.get();
+    
+    if (!snapshot.exists || snapshot.value == null) return;
+    final String activeMatchId = snapshot.value as String;
+    
+    final statusSnap = await _matchRef(activeMatchId).child('meta/status').get();
+    final currentStatus = statusSnap.exists ? statusSnap.value as String : 'waiting';
+    if (currentStatus != 'waiting') return; // Cannot cleanup from a running match
+
+    final playerRef = _matchRef(activeMatchId).child('players/$playerId');
+    final pSnap = await playerRef.get();
+    
+    if (pSnap.exists) {
+      final teamId = (Map<dynamic, dynamic>.from(pSnap.value as Map))['team'] as String?;
+      if (teamId != null) {
+        // Transactionally decrement the counts
+        await _matchRef(activeMatchId).child('meta/teamCounts').runTransaction((Object? currentData) {
+          if (currentData == null) return Transaction.abort();
+          Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
+          int current = counts[teamId] ?? 0;
+          if (current > 0) counts[teamId] = current - 1;
+          return Transaction.success(counts);
+        });
+      }
+      // Remove player node
+      await playerRef.remove();
+    }
   }
 
   @override
@@ -162,6 +243,10 @@ class MatchRepositoryImpl implements MatchRepository {
   @override
   Future<bool> claimTower(String matchId, String teamId, String towerId, String playerId) async {
     final towerRef = _matchRef(matchId).child('teams/$teamId/towers/$towerId');
+    
+    // Prof's Rule #2: Secure transaction base.
+    // In a real production app, this should ALSO be enforced in database.rules.json.
+    // Here we ensure the client at least attempts to validate team ownership before spamming.
     
     try {
       final TransactionResult result = await towerRef.runTransaction((Object? currentData) {

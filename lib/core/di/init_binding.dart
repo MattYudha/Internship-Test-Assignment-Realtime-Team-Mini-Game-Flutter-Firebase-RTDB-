@@ -23,6 +23,7 @@ class InitBinding extends Bindings {
     
     Get.lazyPut(() => LobbyController(
       authRepo: Get.find(),
+      matchRepo: matchRepo,
       createMatchUseCase: Get.find(),
       joinMatchUseCase: Get.find(),
       generateTowerPoolUseCase: Get.find(),

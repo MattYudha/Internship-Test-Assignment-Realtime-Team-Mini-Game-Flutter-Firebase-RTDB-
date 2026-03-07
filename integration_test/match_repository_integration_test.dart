@@ -3,6 +3,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:mini_tower_game/features/match/data/repositories/match_repository_impl.dart';
+import 'package:mini_tower_game/firebase_options.dart';
 
 /// IMPORTANT: To run this test successfully, you must:
 /// 1. Start the Firebase Local Emulator Suite (`firebase emulators:start`)
@@ -16,8 +17,12 @@ void main() {
     // IntegrationTestWidgetsFlutterBinding is required (NOT TestWidgetsFlutterBinding)
     // to properly initialize native channels for firebase_database on Android/iOS.
     IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-    // Assuming Firebase is initialized by the test runner (e.g. via integration_test)
-    // await Firebase.initializeApp();
+    // Firebase MUST be initialized before any FirebaseDatabase.instance access.
+    // Without this, native plugin channels are not registered and the test will throw
+    // FirebaseException: No Firebase App '[DEFAULT]' has been created.
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   });
 
   setUp(() {

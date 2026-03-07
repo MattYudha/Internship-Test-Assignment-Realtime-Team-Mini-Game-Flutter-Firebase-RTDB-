@@ -1,11 +1,15 @@
 import '../entities/match.dart';
+import '../entities/join_match_result.dart';
 
 abstract class MatchRepository {
   /// Create a complete match node optimistically
   Future<String?> createMatch(List<int> towerPool, int targetValue, String hostUid);
 
   /// Join a match by UID, handles auto-balancing via teamCounts transaction
-  Future<String?> joinMatch(String playerId, String displayName);
+  Future<JoinMatchResult> joinMatch(String playerId, String displayName);
+
+  /// Removes a player cleanly (used for Debug Session Reset to prevent ghost players)
+  Future<void> debugCleanupGhostPlayer(String playerId);
 
   /// Add a bot directly to a specific team
   Future<void> addBot(String matchId, String teamId, String botUid, String botName);

@@ -21,4 +21,9 @@ class AuthRepositoryImpl implements AuthRepository {
   String? getCurrentUid() {
     return _firebaseAuth.currentUser?.uid;
   }
+
+  @override
+  Future<void> signOut() async {
+    await _firebaseAuth.signOut();
+  }
 }

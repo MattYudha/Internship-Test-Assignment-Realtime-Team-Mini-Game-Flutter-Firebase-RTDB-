@@ -1,39 +1,92 @@
-import * as functions from "firebase-functions";
+import { onValueUpdated } from "firebase-functions/v2/database";
 import * as admin from "firebase-admin";
 
 admin.initializeApp();
 
 /**
- * Cloud Function to manage match lifecycle.
- * Triggers when a match changes status. If it changes to 'running',
- * it schedules an automatic termination after 5 minutes.
- * 
- * Note: Configured with 320 seconds timeout to accommodate the 5-minute wait.
- * In a strict production environment, Google Cloud Tasks is preferred for scheduling,
- * but this delayed execution is perfect for Firebase Local Emulator validation.
+ * Cloud Function: onMatchStart
+ *
+ * Trigger: Fires whenever /matches/{matchId}/meta is updated.
+ * Triggered at the /meta level (not /meta/status) so that the ENTIRE meta object
+ * — including the server-resolved 'startAt' timestamp — arrives in the event
+ * payload IN MEMORY, eliminating the need for an extra .once("value") round-trip.
+ *
+ * Lifecycle:
+ *  1. Check that status specifically transitioned from 'waiting' → 'running'.
+ *  2. Extract startAt directly from event.data.after.val() (zero extra DB reads).
+ *  3. Write endAt = startAt + 300_000 IMMEDIATELY so Flutter clients can start
+ *     their countdown timers within milliseconds of match start.
+ *  4. THEN wait 5 minutes (the game's actual duration).
+ *  5. Set status to 'ended'.
+ *
+ * ⚠️  Anti-Pattern Note (setTimeout):
+ *  Using await setTimeout(300_000) keeps this function instance alive for the
+ *  entire game duration and incurs continuous compute billing. In a strict
+ *  production environment, Firebase Cloud Tasks or Pub/Sub scheduling should be
+ *  used instead. This pattern is intentionally kept here for local emulator
+ *  validation where billing is not a concern.
+ *
+ *  timeoutSeconds is set to 540 (Google Cloud max) to safely cover the 5-minute
+ *  wait plus execution overhead.
  */
-export const onMatchStart = functions
-    .runWith({ timeoutSeconds: 320 })
-    .database.ref("/matches/{matchId}/meta/status")
-    .onUpdate(async (change, context) => {
-        const after = change.after.val();
+export const onMatchStart = onValueUpdated(
+    {
+        ref: "/matches/{matchId}/meta",
+        timeoutSeconds: 540,
+    },
+    async (event) => {
+        const before = event.data.before.val() as Record<string, unknown> | null;
+        const after = event.data.after.val() as Record<string, unknown> | null;
 
-        // Only trigger when status specifically changes to 'running'
-        if (after === "running") {
-            const matchId = context.params.matchId;
-            functions.logger.info(`[MATCH MANAGER] Match ${matchId} began. Auto-scheduling end trigger in 5 minutes...`);
-
-            // Wait 5 minutes (300,000 ms)
-            await new Promise((resolve) => setTimeout(resolve, 300000));
-
-            // Re-check current status to ensure it hasn't been ended early by host
-            const currentStatus = (await change.after.ref.once("value")).val();
-
-            if (currentStatus === "running") {
-                functions.logger.info(`[MATCH MANAGER] Time expired for match ${matchId}. Terminating now.`);
-                await change.after.ref.set("ended");
-            } else {
-                functions.logger.info(`[MATCH MANAGER] Match ${matchId} was already resolved.`);
-            }
+        // Guard: Only process the specific 'waiting' → 'running' transition.
+        if (before?.status !== "waiting" || after?.status !== "running") {
+            return;
         }
-    });
+
+        const matchId = event.params.matchId;
+        functions_logger_info(`[MATCH MANAGER] Match ${matchId} is now running. Computing endAt in-memory...`);
+
+        // Extract startAt directly from the payload — no extra DB round-trip.
+        // Firebase has already resolved ServerValue.timestamp by the time this
+        // function receives the event, so after.startAt is a concrete number.
+        const startAt = after.startAt as number ?? Date.now();
+        const endAt = startAt + 300_000; // Exactly 5 minutes in milliseconds
+
+        const matchMetaRef = event.data.after.ref;
+
+        // Write endAt IMMEDIATELY so Flutter clients receive the absolute server
+        // timestamp and can begin their countdown timers right away.
+        await matchMetaRef.update({ endAt });
+        functions_logger_info(`[MATCH MANAGER] Match ${matchId}: endAt written (${new Date(endAt).toISOString()}). Starting 5-minute countdown...`);
+
+        // Wait for the game duration (300 seconds).
+        // See Anti-Pattern Note above.
+        await new Promise((resolve) => setTimeout(resolve, 300_000));
+
+        // Re-check whether the match is still running before ending it.
+        // The host may have ended the match early.
+        const currentSnap = await matchMetaRef.child("status").once("value");
+        const currentStatus = currentSnap.val() as string;
+
+        if (currentStatus === "running") {
+            functions_logger_info(`[MATCH MANAGER] Time expired for match ${matchId}. Setting status to ended.`);
+            await matchMetaRef.update({ status: "ended" });
+
+            // Prof's Rule #10: Reset system/waiting_match when match ends
+            // 12️⃣ Reopen app flow: Clean up so subsequent launches create a new match
+            const sysRef = admin.database().ref("system/waiting_match");
+            const sysSnap = await sysRef.once("value");
+            if (sysSnap.val() === matchId) {
+                await sysRef.remove();
+            }
+        } else {
+            functions_logger_info(`[MATCH MANAGER] Match ${matchId} was already resolved (status: ${currentStatus}). Skipping.`);
+        }
+    }
+);
+
+// Minimal logger wrapper to avoid importing the whole functions namespace
+// just for the logger (compatible with modular v2 import style).
+const functions_logger_info = (message: string) => {
+    console.info(message);
+};

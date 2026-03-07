@@ -207,7 +207,7 @@ class TowerGridWidget extends StatelessWidget {
             ),
             // Avatar or '+' Button area at the bottom
             Container(
-              height: 40,
+              height: 56, // Increased height for better visibility
               width: double.infinity,
               decoration: BoxDecoration(
                 color: const Color(0xFF7E57C2), // Purple base
@@ -216,27 +216,49 @@ class TowerGridWidget extends StatelessWidget {
               child: isAvailable 
                 ? const Center(
                     child: CircleAvatar(
-                      radius: 12,
+                      radius: 16, // Larger '+' button
                       backgroundColor: Colors.yellow,
-                      child: Icon(Icons.add, size: 16, color: Colors.purple),
+                      child: Icon(Icons.add, size: 24, color: Colors.purple),
                     ),
                   )
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Placeholder Avatar based on ID hash
-                      CircleAvatar(
-                        radius: 10,
-                        backgroundColor: Colors.white,
-                        child: Text(
-                          _getEmojiForUser(tower.claimedBy ?? tower.solvedBy ?? ''),
-                          style: const TextStyle(fontSize: 12),
-                        ),
+                      // Avatar based on ID hash
+                      Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.topRight,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _getEmojiForUser(tower.claimedBy ?? tower.solvedBy ?? ''),
+                              style: const TextStyle(fontSize: 18), // Larger emoji
+                            ),
+                          ),
+                          if ((tower.claimedBy ?? tower.solvedBy ?? '').startsWith('bot_'))
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.adb, size: 10, color: Colors.white), // Bot badge
+                              ),
+                            )
+                        ],
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         _getShortName(tower),
-                        style: const TextStyle(fontSize: 8, color: Colors.white),
+                        style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
