@@ -52,3 +52,7 @@ flutter/
 test-results/
 .gemini/
 /lib/firebase_options.dart
+
+# Node dependencies
+node_modules/
+**/node_modules/
