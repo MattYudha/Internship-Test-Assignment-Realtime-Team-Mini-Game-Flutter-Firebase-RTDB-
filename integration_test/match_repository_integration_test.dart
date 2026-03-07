@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:mini_tower_game/features/match/data/repositories/match_repository_impl.dart';
@@ -12,7 +13,9 @@ void main() {
   late FirebaseDatabase db;
 
   setUpAll(() async {
-    TestWidgetsFlutterBinding.ensureInitialized();
+    // IntegrationTestWidgetsFlutterBinding is required (NOT TestWidgetsFlutterBinding)
+    // to properly initialize native channels for firebase_database on Android/iOS.
+    IntegrationTestWidgetsFlutterBinding.ensureInitialized();
     // Assuming Firebase is initialized by the test runner (e.g. via integration_test)
     // await Firebase.initializeApp();
   });
