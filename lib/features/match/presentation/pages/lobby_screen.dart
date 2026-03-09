@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../controllers/lobby_controller.dart';
 
-class LobbyScreen extends StatelessWidget {
-  final LobbyController controller = Get.find<LobbyController>();
-
-  LobbyScreen({super.key});
+class LobbyScreen extends GetView<LobbyController> {
+  const LobbyScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

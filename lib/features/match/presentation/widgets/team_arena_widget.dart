@@ -92,7 +92,7 @@ class TeamArenaWidget extends StatelessWidget {
             id: 'tower_grid',
             builder: (ctrl) {
               final teamPlayers = players.values.where((p) => p.team == teamId).toList();
-              final now = DateTime.now().millisecondsSinceEpoch;
+              final now = ctrl.serverTimeMs; // Use server-synced time, NOT local clock
 
               return SizedBox(
                 height: 40,
@@ -102,39 +102,37 @@ class TeamArenaWidget extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final player = teamPlayers[index];
                     final isAFK = (now - player.lastSeenAt) > 30000;
-                    
-                    return Opacity(
-                      opacity: isAFK ? 0.4 : 1.0,
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: isAFK ? Colors.grey : Colors.green),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.person,
-                              size: 16,
-                              color: isAFK ? Colors.grey : Colors.green[700],
+                    // Use alpha colors instead of Opacity widget to prevent Impeller blurry rendering
+                    return Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(isAFK ? 100 : 255),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: isAFK ? Colors.grey : Colors.green),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person,
+                            size: 16,
+                            color: isAFK ? Colors.grey : Colors.green[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            player.displayName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.black.withAlpha(isAFK ? 100 : 255),
+                              decoration: isAFK ? TextDecoration.lineThrough : null,
                             ),
+                          ),
+                          if (isAFK) ...[
                             const SizedBox(width: 4),
-                            Text(
-                              player.displayName,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                decoration: isAFK ? TextDecoration.lineThrough : null,
-                              ),
-                            ),
-                            if (isAFK) ...[
-                              const SizedBox(width: 4),
-                              const Text('💤', style: TextStyle(fontSize: 12)),
-                            ],
+                            Text('💤', style: TextStyle(fontSize: 12, color: Colors.black.withAlpha(100))),
                           ],
-                        ),
+                        ],
                       ),
                     );
                   },

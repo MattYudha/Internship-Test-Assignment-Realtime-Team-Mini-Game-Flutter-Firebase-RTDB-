@@ -20,6 +20,9 @@ abstract class MatchRepository {
   /// Claim an available tower
   Future<bool> claimTower(String matchId, String teamId, String towerId, String playerId);
   
+  /// End the match and announce final results
+  Future<void> endMatch(String matchId);
+  
   /// Solve a tower, atomically update team score, and deterministically replace the tower
   Future<bool> solveTower(String matchId, String teamId, String towerId, String playerId, int movesTaken, int optimalMoves);
   
@@ -31,4 +34,13 @@ abstract class MatchRepository {
   
   /// Auto-release towers that belong to AFK players or expired claims
   Future<void> cleanupExpiredClaims(String matchId, String teamId);
+
+  /// Force start a match without requiring 8 players (for testing/debug)
+  Future<void> forceStartMatch(String matchId);
+
+  /// Reset the system/waiting_match node so a fresh match can be created
+  Future<void> resetWaitingMatch();
+
+  /// Server time offset for synchronized time across widgets
+  int get serverTimeOffset;
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:firebase_database/firebase_database.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/entities/tower.dart';
@@ -7,8 +8,21 @@ import '../../domain/entities/join_match_result.dart';
 
 class MatchRepositoryImpl implements MatchRepository {
   final FirebaseDatabase _db;
+  int _serverTimeOffset = 0;
   
-  MatchRepositoryImpl({FirebaseDatabase? db}) : _db = db ?? FirebaseDatabase.instance;
+  MatchRepositoryImpl({FirebaseDatabase? db}) : _db = db ?? FirebaseDatabase.instance {
+    _initServerTimeOffset();
+  }
+
+  void _initServerTimeOffset() {
+    _db.ref('.info/serverTimeOffset').onValue.listen((event) {
+      if (event.snapshot.exists) {
+        _serverTimeOffset = (event.snapshot.value as num).toInt();
+      }
+    });
+  }
+
+  int get _serverTimeMs => DateTime.now().millisecondsSinceEpoch + _serverTimeOffset;
 
   DatabaseReference _matchRef(String matchId) => _db.ref('matches/$matchId');
 
@@ -170,13 +184,14 @@ class MatchRepositoryImpl implements MatchRepository {
       }
     };
 
-    // If we hit capacity (8), mark match as running
+    // If we hit capacity (8), mark match as running AND INITIALIZE ABSOLUTE TIMERS
     int totalPlayers = (finalData['teamA'] as int) + (finalData['teamB'] as int);
     if (totalPlayers >= 8 && currentStatus != 'running') {
-      // WE DO NOT DELETE sysRef HERE ANYMORE.
-      // It stays alive so disconnected players can reconnect while status == 'running'
+      // We do not delete sysRef yet, kept for reconnections
+      final now = _serverTimeMs; // Fetch precise synchronized time
       updates['meta/status'] = 'running';
-      updates['meta/startAt'] = ServerValue.timestamp;
+      updates['meta/startAt'] = now;
+      updates['meta/endAt'] = now + 300000; // Exact 5 minutes from calculated start
     }
 
     await _matchRef(activeMatchId).update(updates);
@@ -256,14 +271,14 @@ class MatchRepositoryImpl implements MatchRepository {
         
         Map<String, dynamic> towerData = Map<String, dynamic>.from(currentData as Map);
         final state = towerData['state'];
-        final currentClaimExp = towerData['claimExpiresAt'] as int?;
-        final now = DateTime.now().millisecondsSinceEpoch;
+        final currentClaimExp = towerData['claimExpiresAt'] as num?;
+        final now = _serverTimeMs;
 
-        // Can claim if available OR claim is expired
+        // Can claim if available OR claim is expired based on EXACT server time
         if (state == 'available' || (state == 'claimed' && currentClaimExp != null && currentClaimExp < now)) {
           towerData['state'] = 'claimed';
           towerData['claimedBy'] = playerId;
-          towerData['claimExpiresAt'] = now + 45000; // 45 seconds from now (gives humans more time)
+          towerData['claimExpiresAt'] = now + 45000; // 45 seconds from EXACT SERVER TIME
           return Transaction.success(towerData);
         }
         
@@ -352,15 +367,48 @@ class MatchRepositoryImpl implements MatchRepository {
 
   @override
   Future<void> releaseTower(String matchId, String teamId, String towerId) async {
-    // Only release if it hasn't been solved (best effort)
     final towerRef = _matchRef(matchId).child('teams/$teamId/towers/$towerId');
-    final snapshot = await towerRef.child('state').get();
-    if (snapshot.value == 'claimed') {
-      await towerRef.update({
-        'state': 'available',
-        'claimedBy': null,
-        'claimExpiresAt': null,
+    
+    // Use transaction to prevent overriding someone else's freshly claimed tower
+    try {
+      await towerRef.runTransaction((Object? currentData) {
+        if (currentData == null) return Transaction.abort();
+        
+        Map<String, dynamic> towerData = Map<String, dynamic>.from(currentData as Map);
+        if (towerData['state'] == 'claimed') {
+           towerData['state'] = 'available';
+           towerData['claimedBy'] = null;
+           towerData['claimExpiresAt'] = null;
+           return Transaction.success(towerData);
+        }
+        return Transaction.abort();
       });
+    } catch (e) {
+      // Best effort failure handling, do nothing
+    }
+  }
+
+  @override
+  Future<void> endMatch(String matchId) async {
+    final statusRef = _matchRef(matchId).child('meta/status');
+    
+    // Prof's Rule #3: Decentralized Termination (with Jitter)
+    // Add a random delay between 0 to 2 seconds to spread out API requests
+    // when all 8 clients try to end the match simultaneously.
+    final Random random = Random();
+    int jitterMs = random.nextInt(2000); 
+    await Future.delayed(Duration(milliseconds: jitterMs));
+    
+    try {
+      // The Jitter champion gets to transact the final payload.
+      await statusRef.runTransaction((Object? currentData) {
+        if (currentData == 'running') {
+          return Transaction.success('ended');
+        }
+        return Transaction.abort(); // Someone beat us during network latency
+      });
+    } catch(e) {
+      // ignore
     }
   }
 
@@ -376,4 +424,37 @@ class MatchRepositoryImpl implements MatchRepository {
     // However, thanks to the lazy validation, explicit backend cleanup isn't strictly necessary,
     // as any active player can claim expired towers.
   }
+
+  @override
+  Future<void> forceStartMatch(String matchId) async {
+    final metaRef = _matchRef(matchId).child('meta');
+    
+    try {
+      await metaRef.runTransaction((Object? currentData) {
+        if (currentData == null) return Transaction.abort();
+        
+        Map<String, dynamic> meta = Map<String, dynamic>.from(currentData as Map);
+        
+        // Only start if currently waiting
+        if (meta['status'] != 'waiting') return Transaction.abort();
+        
+        final now = _serverTimeMs;
+        meta['status'] = 'running';
+        meta['startAt'] = now;
+        meta['endAt'] = now + 300000; // 5 minutes
+        
+        return Transaction.success(meta);
+      });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  @override
+  Future<void> resetWaitingMatch() async {
+    await _db.ref('system/waiting_match').remove();
+  }
+
+  @override
+  int get serverTimeOffset => _serverTimeOffset;
 }

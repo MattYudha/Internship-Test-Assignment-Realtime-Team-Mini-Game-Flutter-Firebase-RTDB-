@@ -160,7 +160,8 @@ class BotService extends GetxController {
         print('[Bot ${bot.uid}] Targeting tower ${target.id} (val: ${target.startValue})');
 
         // --- JITTER before claim (prevents RTDB transaction bomb) ---
-        final claimJitter = 500 + _rnd.nextInt(1000); // 0.5 – 1.5 s
+        // HUMANIZATION: Bots now actually "look" at the screen before picking
+        final claimJitter = 1500 + _rnd.nextInt(2500); // 1.5 - 4 seconds to decide
         await Future.delayed(Duration(milliseconds: claimJitter));
         if (!_isRunning.value) break;
 
@@ -191,13 +192,14 @@ class BotService extends GetxController {
         if (bot.skillLevel == 'optimal') {
           // Pintar: use exact BFS answer, short delay
           reportedMoves = optimalMoves;
-          solveDelayMs = 1000 + _rnd.nextInt(1000); // 1–2 s
+          solveDelayMs = 2000 + _rnd.nextInt(2000); // 2-4 s to solve
         } else {
-          // Bodoh (random): add 0–3 penalty moves, longer delay
+          // Bodoh (random): add 0–3 penalty moves, much longer delay
           final penalty = _rnd.nextInt(4); // 0, 1, 2, or 3
           reportedMoves = optimalMoves + penalty;
-          // More moves = more "thinking time" (3–6 s base)
-          solveDelayMs = 3000 + _rnd.nextInt(3000) + (penalty * 500);
+          // HUMANIZATION: Really slow them down.
+          // Base 5-8 seconds + 1 sec per move penalty
+          solveDelayMs = 5000 + _rnd.nextInt(3000) + (penalty * 1000);
         }
 
         // --- JITTER: simulate solve time ---

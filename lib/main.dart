@@ -10,7 +10,9 @@ import 'features/match/data/repositories/match_repository_impl.dart';
 import 'features/auth/domain/repositories/auth_repository.dart';
 import 'features/match/domain/usecases/claim_tower_usecase.dart';
 import 'features/match/domain/usecases/solve_tower_usecase.dart';
+import 'features/match/presentation/controllers/lobby_controller.dart';
 import 'features/match/presentation/controllers/match_controller.dart';
+import 'core/di/lobby_binding.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +42,8 @@ class RealtimeMiniGameApp extends StatelessWidget {
       getPages: [
         GetPage(
           name: '/lobby',
-          page: () => LobbyScreen(),
+          binding: LobbyBinding(),
+          page: () => const LobbyScreen(),
         ),
         GetPage(
           name: '/match',
