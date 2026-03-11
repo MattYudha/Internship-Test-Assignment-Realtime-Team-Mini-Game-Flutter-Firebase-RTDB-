@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/di/init_binding.dart';
@@ -21,6 +22,7 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+    await Get.putAsync<SharedPreferences>(() async => await SharedPreferences.getInstance());
   } catch (e) {
     debugPrint("Firebase init failed (expected with dummy keys): $e");
   }

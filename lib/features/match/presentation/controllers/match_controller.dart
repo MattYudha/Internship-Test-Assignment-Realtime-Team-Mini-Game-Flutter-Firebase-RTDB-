@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/entities/tower.dart';
 import '../../domain/usecases/claim_tower_usecase.dart';
@@ -35,11 +36,13 @@ class MatchController extends GetxController {
   Timer? _heartbeatTimer;
   Timer? _countdownTimer;
   Timer? _uiRefreshTimer; // For proactive AFK visual release
+  Timer? _afkPurgerTimer; // Fixed memory leak: assigned the purger to a variable
 
   BotService? botService;
 
   final RxInt remainingSeconds = 0.obs;
   final RxBool isMatchLocallyEnded = false.obs;
+  final RxBool showOnboarding = false.obs;
 
   String get currentUid => _authRepo.getCurrentUid() ?? '';
   bool get isHost => liveMatch.value?.meta.hostUid == currentUid;
@@ -59,11 +62,44 @@ class MatchController extends GetxController {
   void onInit() {
     super.onInit();
     _initServerTimeOffset();
+    
+    // Strict Onboarding Logic (Fixed Async Trap)
+    try {
+      final prefs = Get.find<SharedPreferences>();
+      final hasSeenOnboarding = prefs.getBool('has_seen_onboarding') ?? false;
+      print("INIT ONBOARDING: hasSeen=$hasSeenOnboarding");
+      
+      // Wait for the first match event to evaluate isHost and isWaiting
+      ever(liveMatch, (match) {
+        if (match != null) {
+          final waiting = match.meta.status == 'waiting';
+          final host = match.meta.hostUid == currentUid;
+          print("ONBOARDING EVAL: waiting=$waiting, host=$host, hasSeen=$hasSeenOnboarding");
+          
+          if (!hasSeenOnboarding && host && waiting) {
+            showOnboarding.value = true;
+            print("SHOW ONBOARDING = TRUE");
+          } else {
+            showOnboarding.value = false;
+          }
+        }
+      });
+    } catch (e) {
+      print("ONBOARDING INIT ERROR: $e");
+    }
+
     botService = BotService(_matchRepo, matchId);
     _startMatchStream();
     _startHeartbeat();
     _startUiRefreshTimer();
     _startAfkPurger();
+  }
+
+  void dismissOnboarding() {
+    showOnboarding.value = false;
+    try {
+      Get.find<SharedPreferences>().setBool('has_seen_onboarding', true);
+    } catch (_) {}
   }
 
   void _startMatchStream() {
@@ -90,10 +126,10 @@ class MatchController extends GetxController {
       final diff = data.meta.endAt! - now;
       remainingSeconds.value = diff > 0 ? (diff / 1000).floor() : 0;
       
-      // Prof's Rule #3 Decentralized Termination & Passive Locking
+      // Prof's Rule #3 Decentralized Termination & Passive Locking (RTDB Transaction)
       if (diff <= 0) {
         isMatchLocallyEnded.value = true; 
-        // Trigger the backend endMatch transaction. The repository handles Jitter logic!
+        // Trigger the backend endMatch transaction. The repository handles RTDB Transaction to prevent race conditions!
         _matchRepo.endMatch(matchId); 
       } else {
         isMatchLocallyEnded.value = false;
@@ -108,6 +144,7 @@ class MatchController extends GetxController {
           remainingSeconds.value = 0;
           isMatchLocallyEnded.value = true;
           timer.cancel();
+          // Trigger the backend endMatch transaction. The repository handles RTDB Transaction to prevent race conditions!
           _matchRepo.endMatch(matchId); 
         }
       });
@@ -124,14 +161,28 @@ class MatchController extends GetxController {
 
   void _startUiRefreshTimer() {
     // Proactively refresh UI every second to check if any claim expired visually
+    // Also explicitly trigger player_status for the AFK roster reactivity
     _uiRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      update(['tower_grid']);
+      update(['tower_grid', 'player_status']);
     });
+  }
+
+  bool isPlayerAFK(String playerId) {
+    final team = liveMatch.value?.teams[teamId];
+    if (team == null) return false;
+    final liveTeam = liveMatch.value?.players[playerId] ?? liveMatch.value?.teams[teamId]?.towers.values.firstWhere((element) => false);
+    
+    // We get lastSeenAt by finding the player from global Match data if it existed
+    final player = liveMatch.value?.players[playerId];
+    if (player == null) return false;
+
+    return (serverTimeMs - player.lastSeenAt) > 30000;
   }
 
   void _startAfkPurger() {
     // Prof's Rule #1: Decentralized Anti-DDoS AFK Purger
-    Timer.periodic(const Duration(seconds: 5), (_) async {
+    // Fixed memory leak: Assigned to _afkPurgerTimer
+    _afkPurgerTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       final match = liveMatch.value;
       if (match == null || isMatchLocallyEnded.value) return;
 
@@ -166,6 +217,7 @@ class MatchController extends GetxController {
     _heartbeatTimer?.cancel();
     _countdownTimer?.cancel();
     _uiRefreshTimer?.cancel();
+    _afkPurgerTimer?.cancel(); // Fixed memory leak
     super.onClose();
   }
 

@@ -48,6 +48,13 @@ class _TowerAttemptModalState extends State<TowerAttemptModal> with SingleTicker
     super.dispose();
   }
 
+  void _checkUnreachable() {
+    // Proactively calculate if both NEXT possible moves will exceed 200,000
+    if ((currentValue + 10 > 200000) && (currentValue * 2 > 200000)) {
+      isUnreachable = true;
+    }
+  }
+
   void _applyOp(int type) {
     if (isUnreachable) return;
 
@@ -61,6 +68,8 @@ class _TowerAttemptModalState extends State<TowerAttemptModal> with SingleTicker
 
       if (currentValue > 200000 || currentValue < 0) {
         isUnreachable = true;
+      } else {
+        _checkUnreachable(); // proactively check for next moves
       }
     });
 

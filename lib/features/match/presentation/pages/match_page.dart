@@ -4,9 +4,20 @@ import 'package:get/get.dart';
 import '../controllers/match_controller.dart';
 import '../widgets/team_arena_widget.dart';
 import '../widgets/debug_bot_panel.dart';
+import '../widgets/match_onboarding_overlay.dart';
+import '../widgets/match_result_overlay.dart';
 
-class MatchPage extends GetView<MatchController> {
+class MatchPage extends StatefulWidget {
   const MatchPage({super.key});
+
+  @override
+  State<MatchPage> createState() => _MatchPageState();
+}
+
+class _MatchPageState extends State<MatchPage> {
+  final MatchController controller = Get.find<MatchController>();
+  final GlobalKey botIconKey = GlobalKey();
+  final GlobalKey startIconKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +36,7 @@ class MatchPage extends GetView<MatchController> {
                   TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
                   ElevatedButton(
                     onPressed: () {
-                      Get.back(); // Close dialog
+                      Get.back();
                       controller.forceEndAndReset();
                     },
                     style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -52,6 +63,7 @@ class MatchPage extends GetView<MatchController> {
           Obx(() {
             if ((controller.isHost || kDebugMode) && controller.botService != null) {
               return IconButton(
+                key: botIconKey,
                 icon: const Icon(Icons.adb),
                 tooltip: 'Simulate Bots',
                 onPressed: () {
@@ -69,6 +81,7 @@ class MatchPage extends GetView<MatchController> {
           Obx(() {
             if (controller.isWaiting) {
               return IconButton(
+                key: startIconKey,
                 icon: const Icon(Icons.flash_on, color: Colors.amber),
                 tooltip: 'Force Start Match',
                 onPressed: () {
@@ -125,110 +138,134 @@ class MatchPage extends GetView<MatchController> {
           }),
         ],
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: const Color(0xFF81C784), // Light Green (Target Arena color)
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFF4CAF50), width: 4),
-            ),
-            child: GetBuilder<MatchController>(
-              id: 'tower_grid',
-              builder: (ctrl) {
-                final match = ctrl.liveMatch.value;
-                if (match == null) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      body: Stack(
+        children: [
+          // ─── Main game arena ───────────────────────────────────────────
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF81C784),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFF4CAF50), width: 4),
+                ),
+                child: GetBuilder<MatchController>(
+                  id: 'tower_grid',
+                  builder: (ctrl) {
+                    final match = ctrl.liveMatch.value;
+                    if (match == null) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-                final teamA = match.teams['teamA'];
-                final teamB = match.teams['teamB'];
+                    final teamA = match.teams['teamA'];
+                    final teamB = match.teams['teamB'];
 
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  clipBehavior: Clip.antiAlias, // Fix for Impeller blurry rendering
-                  child: Stack(
-                    children: [
-                      // Main game content
-                      Column(
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
                         children: [
-                          if (teamA != null)
-                            Expanded(
-                              child: TeamArenaWidget(
-                                teamId: 'teamA',
-                                teamName: 'Team A (Blue)',
-                                teamData: teamA,
-                                players: match.players,
-                                targetValue: match.meta.targetValue,
-                                isMyTeam: ctrl.teamId == 'teamA',
-                                controller: ctrl,
-                                accentColor: Colors.blue,
-                              ),
-                            ),
-                          
-                          const Divider(height: 4, thickness: 4, color: Colors.black12),
+                          // Team arenas
+                          Column(
+                            children: [
+                              if (teamA != null)
+                                Expanded(
+                                  child: TeamArenaWidget(
+                                    teamId: 'teamA',
+                                    teamName: 'Team A (Blue)',
+                                    teamData: teamA,
+                                    players: match.players,
+                                    targetValue: match.meta.targetValue,
+                                    isMyTeam: ctrl.teamId == 'teamA',
+                                    controller: ctrl,
+                                    accentColor: Colors.blue,
+                                  ),
+                                ),
+                              const Divider(height: 4, thickness: 4, color: Colors.black12),
+                              if (teamB != null)
+                                Expanded(
+                                  child: TeamArenaWidget(
+                                    teamId: 'teamB',
+                                    teamName: 'Team B (Cyan)',
+                                    teamData: teamB,
+                                    players: match.players,
+                                    targetValue: match.meta.targetValue,
+                                    isMyTeam: ctrl.teamId == 'teamB',
+                                    controller: ctrl,
+                                    accentColor: Colors.cyan,
+                                  ),
+                                ),
+                            ],
+                          ),
 
-                          if (teamB != null)
-                            Expanded(
-                              child: TeamArenaWidget(
-                                teamId: 'teamB',
-                                teamName: 'Team B (Cyan)',
-                                teamData: teamB,
-                                players: match.players,
-                                targetValue: match.meta.targetValue,
-                                isMyTeam: ctrl.teamId == 'teamB',
-                                controller: ctrl,
-                                accentColor: Colors.cyan,
+                          // Waiting for players overlay
+                          if (ctrl.isWaiting)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.hourglass_top, size: 64, color: Colors.white),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'Waiting for Players...',
+                                      style: TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Obx(() => Text(
+                                      '${ctrl.liveMatch.value?.players.length ?? 0} / 8 players joined',
+                                      style: const TextStyle(fontSize: 16, color: Colors.white70),
+                                    )),
+                                    const SizedBox(height: 24),
+                                    const Text(
+                                      'Add bots with 🤖 or tap ⚡ to force start',
+                                      style: TextStyle(fontSize: 14, color: Colors.orangeAccent),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                         ],
                       ),
-
-                      // "Waiting for Players" overlay (Prof's Step 3)
-                      if (ctrl.isWaiting)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.hourglass_top, size: 64, color: Colors.white),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Waiting for Players...',
-                                  style: TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Obx(() => Text(
-                                  '${ctrl.liveMatch.value?.players.length ?? 0} / 8 players joined',
-                                  style: const TextStyle(fontSize: 16, color: Colors.white70),
-                                )),
-                                const SizedBox(height: 24),
-                                const Text(
-                                  'Add bots with 🤖 or tap ⚡ to force start',
-                                  style: TextStyle(fontSize: 14, color: Colors.orangeAccent),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             ),
           ),
-        ),
+
+          // ─── Onboarding overlay (first-time host, waiting state only) ──
+          Obx(() {
+            if (!controller.showOnboarding.value) return const SizedBox.shrink();
+            return Positioned.fill(
+              child: MatchOnboardingOverlay(
+                botIconKey: botIconKey,
+                startIconKey: startIconKey,
+                onDismiss: controller.dismissOnboarding,
+              ),
+            );
+          }),
+
+          // ─── Endgame result overlay (RTDB status == 'ended') ───────────
+          Obx(() {
+            final match = controller.liveMatch.value;
+            if (match == null || match.meta.status != 'ended') return const SizedBox.shrink();
+            return Positioned.fill(
+              child: MatchResultOverlay(matchData: match),
+            );
+          }),
+        ],
       ),
     );
   }

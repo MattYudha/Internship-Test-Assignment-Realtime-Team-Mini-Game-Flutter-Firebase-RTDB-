@@ -89,10 +89,9 @@ class TeamArenaWidget extends StatelessWidget {
 
           // Player Roster List with Active AFK Evaluation (Tied to _uiRefreshTimer)
           GetBuilder<MatchController>(
-            id: 'tower_grid',
+            id: 'player_status', // explicitly listen to player_status for AFK reactivity
             builder: (ctrl) {
               final teamPlayers = players.values.where((p) => p.team == teamId).toList();
-              final now = ctrl.serverTimeMs; // Use server-synced time, NOT local clock
 
               return SizedBox(
                 height: 40,
@@ -101,7 +100,8 @@ class TeamArenaWidget extends StatelessWidget {
                   itemCount: teamPlayers.length,
                   itemBuilder: (context, index) {
                     final player = teamPlayers[index];
-                    final isAFK = (now - player.lastSeenAt) > 30000;
+                    final isAFK = ctrl.isPlayerAFK(player.uid);
+                    
                     // Use alpha colors instead of Opacity widget to prevent Impeller blurry rendering
                     return Container(
                       margin: const EdgeInsets.only(right: 8),
