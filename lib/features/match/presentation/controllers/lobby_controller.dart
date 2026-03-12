@@ -58,11 +58,43 @@ class LobbyController extends GetxController {
       _teamCountsSubscription = FirebaseDatabase.instance
           .ref('matches/$matchId/meta/teamCounts')
           .onValue
-          .listen((e) {
+          .listen((e) async {
             if (!e.snapshot.exists) return;
             final data = Map<dynamic, dynamic>.from(e.snapshot.value as Map);
-            countA.value = (data['teamA'] as num?)?.toInt() ?? 0;
-            countB.value = (data['teamB'] as num?)?.toInt() ?? 0;
+            int rawA = (data['teamA'] as num?)?.toInt() ?? 0;
+            int rawB = (data['teamB'] as num?)?.toInt() ?? 0;
+
+            // Auto-reconcile: if any count exceeds 4, scan real players and fix Firebase
+            if (rawA > 4 || rawB > 4) {
+              final playersSnap = await FirebaseDatabase.instance
+                  .ref('matches/$matchId/players')
+                  .get();
+              int trueA = 0;
+              int trueB = 0;
+              if (playersSnap.exists && playersSnap.value != null) {
+                final players = Map<dynamic, dynamic>.from(playersSnap.value as Map);
+                for (final entry in players.entries) {
+                  // Skip bots — they are transient
+                  final uid = entry.key as String;
+                  if (uid.startsWith('bot_')) continue;
+                  final team = (entry.value as Map)['team'] as String?;
+                  if (team == 'teamA') trueA++;
+                  else if (team == 'teamB') trueB++;
+                }
+              }
+              // Clamp to max 4 per team
+              trueA = trueA.clamp(0, 4);
+              trueB = trueB.clamp(0, 4);
+              // Write the corrected counts back to Firebase
+              await FirebaseDatabase.instance
+                  .ref('matches/$matchId/meta/teamCounts')
+                  .set({'teamA': trueA, 'teamB': trueB});
+              countA.value = trueA;
+              countB.value = trueB;
+            } else {
+              countA.value = rawA;
+              countB.value = rawB;
+            }
           });
     });
   }
