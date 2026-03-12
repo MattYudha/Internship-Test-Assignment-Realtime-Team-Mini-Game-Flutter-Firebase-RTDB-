@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 import 'package:get/get.dart';
 import 'package:uuid/uuid.dart';
 import '../../domain/repositories/match_repository.dart';
@@ -69,15 +70,25 @@ class BotService extends GetxController {
     final String botUid = 'bot_${_uuid.v4().substring(0, 8)}';
     final String botName = _botName();
 
-    // Register bot into /players node via repository transaction
-    await _matchRepo.addBot(matchId, teamId, botUid, botName);
+    try {
+      // Register bot into /players node via repository transaction
+      await _matchRepo.addBot(matchId, teamId, botUid, botName);
 
-    final state = _BotState(uid: botUid, teamId: teamId, skillLevel: skillLevel);
-    _bots[botUid] = state;
+      final state = _BotState(uid: botUid, teamId: teamId, skillLevel: skillLevel);
+      _bots[botUid] = state;
 
-    // If simulation is already live, start this bot's loop immediately
-    if (_isRunning.value) {
-      _runLoop(botUid);
+      // If simulation is already live, start this bot's loop immediately
+      if (_isRunning.value) {
+        _runLoop(botUid);
+      }
+    } catch (e) {
+      Get.snackbar(
+        'Bot Spawn Failed',
+        e.toString().replaceAll('Exception: ', ''),
+        backgroundColor: Color(0xFFD32F2F),
+        colorText: Color(0xFFFFFFFF),
+        snackPosition: SnackPosition.TOP,
+      );
     }
   }
 

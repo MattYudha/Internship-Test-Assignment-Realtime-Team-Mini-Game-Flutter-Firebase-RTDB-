@@ -123,6 +123,8 @@ class MatchRepositoryImpl implements MatchRepository {
     }
 
     // UID DOES NOT EXIST IN MATCH.
+    // If it's already running, we reject new *human* joins (bots handle their own joins).
+    // This is to prevent joining a game midway if they weren't already in it.
     if (currentStatus == 'running') {
       return const JoinMatchResult(status: JoinMatchStatus.lateJoinRejected, message: 'Match is already running.');
     }
@@ -231,38 +233,67 @@ class MatchRepositoryImpl implements MatchRepository {
     
     final statusSnap = await _matchRef(activeMatchId).child('meta/status').get();
     final currentStatus = statusSnap.exists ? statusSnap.value as String : 'waiting';
-    if (currentStatus != 'waiting') return; // Cannot cleanup from a running match
 
-    final playerRef = _matchRef(activeMatchId).child('players/$playerId');
-    final pSnap = await playerRef.get();
+    // 1. Fetch ALL players in the lobby
+    final playersSnap = await _matchRef(activeMatchId).child('players').get();
     
-    if (pSnap.exists) {
-      final teamId = (Map<dynamic, dynamic>.from(pSnap.value as Map))['team'] as String?;
-      if (teamId != null) {
-        // Transactionally decrement the counts
-        await _matchRef(activeMatchId).child('meta/teamCounts').runTransaction((Object? currentData) {
-          if (currentData == null) return Transaction.abort();
-          Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
-          int current = counts[teamId] ?? 0;
-          if (current > 0) counts[teamId] = current - 1;
-          return Transaction.success(counts);
-        });
+    int trueCountA = 0;
+    int trueCountB = 0;
+
+    if (playersSnap.exists && playersSnap.value != null) {
+      final playersData = Map<dynamic, dynamic>.from(playersSnap.value as Map);
+      
+      for (final entry in playersData.entries) {
+        final String uid = entry.key as String;
+        
+        // 2. Identify the caller or any bots
+        if (uid == playerId || uid.startsWith('bot_')) {
+          // Nuke them from players node
+           await _matchRef(activeMatchId).child('players/$uid').remove();
+        } else {
+          // 3. Count surviving valid human players
+          final teamId = (entry.value as Map)['team'] as String?;
+          if (teamId == 'teamA') {
+            trueCountA++;
+          } else if (teamId == 'teamB') {
+            trueCountB++;
+          }
+        }
       }
-      // Remove player node
-      await playerRef.remove();
     }
+
+    final int totalSurviving = trueCountA + trueCountB;
+    final String newStatus = (currentStatus == 'running' && totalSurviving < 8) ? 'waiting' : currentStatus;
+
+    // 4. Force sync the exact team counts and potentially downgrade match status to waiting
+    await _matchRef(activeMatchId).child('meta').update({
+      'teamCounts/teamA': trueCountA,
+      'teamCounts/teamB': trueCountB,
+      'status': newStatus,
+    });
   }
 
   @override
   Future<void> addBot(String matchId, String teamId, String botUid, String botName) async {
     // Forcefully join a specific team. We transact to safely increment team count.
     final countsRef = _matchRef(matchId).child('meta/teamCounts');
-    await countsRef.runTransaction((Object? currentData) {
+    final TransactionResult result = await countsRef.runTransaction((Object? currentData) {
       if (currentData == null) return Transaction.success({teamId: 1});
       Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
-      counts[teamId] = (counts[teamId] ?? 0) + 1;
+      
+      int currentCount = (counts[teamId] as num?)?.toInt() ?? 0;
+      if (currentCount >= 4) {
+        // Enforce the 4-player cap even for bots
+        return Transaction.abort();
+      }
+      
+      counts[teamId] = currentCount + 1;
       return Transaction.success(counts);
     });
+
+    if (!result.committed) {
+      throw Exception('Team $teamId is already full (Max 4 players).');
+    }
 
     // Write player profile
     await _matchRef(matchId).child('players/$botUid').set({
