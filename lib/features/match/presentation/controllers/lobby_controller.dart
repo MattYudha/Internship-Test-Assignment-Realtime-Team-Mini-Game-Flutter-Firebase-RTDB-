@@ -87,6 +87,23 @@ class LobbyController extends GetxController {
       return;
     }
 
+    // Local Fast-Fail Capacity Pre-check
+    if (preferredTeam == LobbyTeam.a && countA.value >= 4) {
+      Get.snackbar('Team A is Full', 'Please choose Team B.',
+          backgroundColor: Colors.orange[700], colorText: Colors.white, snackPosition: SnackPosition.TOP);
+      return;
+    }
+    if (preferredTeam == LobbyTeam.b && countB.value >= 4) {
+      Get.snackbar('Team B is Full', 'Please choose Team A.',
+          backgroundColor: Colors.orange[700], colorText: Colors.white, snackPosition: SnackPosition.TOP);
+      return;
+    }
+    if (preferredTeam == null && (countA.value + countB.value) >= 8) {
+      Get.snackbar('Match Full', 'The current match is full (Max 8 players).',
+          backgroundColor: Colors.orange[700], colorText: Colors.white, snackPosition: SnackPosition.TOP);
+      return;
+    }
+
     isConnecting.value = true;
 
     try {
