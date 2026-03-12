@@ -6,7 +6,7 @@ class JoinMatchUseCase {
   
   JoinMatchUseCase(this.repository);
   
-  Future<JoinMatchResult> call(String playerId, String displayName) async {
-    return await repository.joinMatch(playerId, displayName);
+  Future<JoinMatchResult> call(String playerId, String displayName, {String? preferredTeam}) async {
+    return await repository.joinMatch(playerId, displayName, preferredTeam: preferredTeam);
   }
 }

@@ -5,7 +5,7 @@ import 'bfs_solver.dart';
 class GenerateTowerPoolUseCase {
   /// Asynchronously generates an array of 500 solvable target values for the `towerPool`.
   /// Uses a single-batch isolate to prevent main thread blocking and avoid isolate spawn overhead.
-  Future<List<int>> call({int size = 500, int min = 5, int max = 100, int targetValue = 1000}) async {
+  Future<List<int>> call({int size = 500, int min = 50, int max = 250, int targetValue = 1000}) async {
     return await compute(_generateValidPoolInBackground, {
       'size': size,
       'min': min,
@@ -33,8 +33,8 @@ List<int> _generateValidPoolInBackground(Map<String, int> args) {
   while (head < queue.length) {
     int current = queue[head++];
     
-    // Check if current is within our desired spawn range
-    if (current >= minLimit && current <= maxLimit) {
+    // Check if current is within our desired spawn range and is a multiple of 5
+    if (current >= minLimit && current <= maxLimit && current % 5 == 0) {
       validStarts.add(current);
       if (validStarts.length >= size * 2) {
         break; // We have enough candidates

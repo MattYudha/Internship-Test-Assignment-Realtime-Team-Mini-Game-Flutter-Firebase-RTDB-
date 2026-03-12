@@ -23,4 +23,7 @@ This file documents the AI-assisted development process for the **Realtime Tower
 ## 3. Key Implementations Based on AI Suggestions
 *   `BfsSolver.getOptimalMoves` executed inside `compute()`.
 *   RTDB `runTransaction` explicitly scoped to `/teams/teamA/towers/towerId` instead of the parent `/teams/teamA` node.
-*   GetX `MatchController` utilizing internal proactive `Timer.periodic` to reactively free up "Claimed" visually expired towers on the frontend instantly (AFK Management) without waiting for server triggers.
+*   **GetX State Sync with Flame Loop:** AI identified that standard Flutter builders drop frame states when continuously passed to Flame's `GameWidget`. It refactored `TeamArenaWidget` into a `StatefulWidget` to persist the `TowerChallengeGame` instance and explicitly call `syncTowers()` dynamically during the `GetBuilder` updates without losing internal Flame render states.
+
+### UI / UX Render Engine (Flame Migration)
+*   **Flame Migration:** Replaced native standard Flutter Widgets (`Container`, `ListView`) with Flame's pipeline. Specifically, `TowerChallengeGame` was rewritten from a dual-camera setup to a `Single-Team` horizontal scrolling architecture. The `TowerComponent` now natively renders vector rectangles and leverages `TapCallbacks` instead of standard `GestureDetector` widgets to fulfill real game-engine interactive requirements.

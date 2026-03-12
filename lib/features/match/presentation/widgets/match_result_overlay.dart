@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../domain/entities/match.dart';
 import '../controllers/match_controller.dart';
+import '../controllers/lobby_controller.dart';
 
 class MatchResultOverlay extends StatelessWidget {
   final MatchData matchData;
@@ -16,87 +17,110 @@ class MatchResultOverlay extends StatelessWidget {
     final scoreA = teamA?.score ?? 0;
     final scoreB = teamB?.score ?? 0;
 
+    int movesA = 0;
+    int movesB = 0;
+    for (var player in matchData.players.values) {
+      if (player.team == 'teamA') movesA += player.stats.totalMoves;
+      if (player.team == 'teamB') movesB += player.stats.totalMoves;
+    }
+
     String winnerText;
     Color winnerColor;
 
     if (scoreA > scoreB) {
       winnerText = '🏆 Team A Wins!';
-      winnerColor = Colors.blue;
+      winnerColor = const Color(0xFF448AFF);
     } else if (scoreB > scoreA) {
       winnerText = '🏆 Team B Wins!';
-      winnerColor = Colors.cyan;
+      winnerColor = const Color(0xFF00E5FF);
     } else {
       winnerText = '🤝 Match Drawn!';
-      winnerColor = Colors.amber;
+      winnerColor = const Color(0xFFFFCA28);
     }
 
     return Container(
-      color: Colors.black.withOpacity(0.85),
+      color: Colors.black.withOpacity(0.9),
       child: Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          padding: const EdgeInsets.all(32),
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.fromLTRB(32, 40, 32, 40),
           decoration: BoxDecoration(
-            color: const Color(0xFF1B5E20), // Dark green retro feel
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: winnerColor, width: 6),
+            color: const Color(0xFF1E1E2E), // Sleek Navy/Dark Gray
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: winnerColor.withOpacity(0.6), width: 2),
             boxShadow: [
               BoxShadow(
-                color: winnerColor.withOpacity(0.5),
+                color: winnerColor.withOpacity(0.3),
+                blurRadius: 40,
+                spreadRadius: -10,
+              ),
+              const BoxShadow(
+                color: Colors.black54,
                 blurRadius: 20,
-                spreadRadius: 5,
-              )
+                offset: Offset(0, 10),
+              ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'MATCH ENDED!',
+                'MATCH ENDED',
                 style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: 2,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white54,
+                  letterSpacing: 4,
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
               Text(
                 winnerText,
                 style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
                   color: winnerColor,
+                  shadows: [Shadow(color: winnerColor.withOpacity(0.5), blurRadius: 10)],
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 48),
               
               // Score Display
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _buildScore('Team A', scoreA, Colors.blue),
-                  const Text('VS', style: TextStyle(color: Colors.white54, fontSize: 20, fontWeight: FontWeight.bold)),
-                  _buildScore('Team B', scoreB, Colors.cyan),
+                  _buildScore('TEAM A', scoreA, movesA, const Color(0xFF448AFF)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text('VS', style: TextStyle(color: Colors.white30, fontSize: 18, fontWeight: FontWeight.w900)),
+                  ),
+                  _buildScore('TEAM B', scoreB, movesB, const Color(0xFF00E5FF)),
                 ],
               ),
               
-              const SizedBox(height: 48),
+              const SizedBox(height: 56),
               
-              // The critical fix: Local cleanup only. Unassigned from Firebase Write redundancy.
+              // Local cleanup only. Unassigned from Firebase Write redundancy.
               SizedBox(
                 width: double.infinity,
-                height: 54,
+                height: 56,
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.home, size: 28),
-                  label: const Text('Return to Lobby', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.home_rounded, size: 24),
+                  label: const Text('Return to Lobby', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: Colors.black87,
+                    foregroundColor: const Color(0xFF1E1E2E),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  onPressed: () {
+                  onPressed: () async {
+                    // Clear session so reopening the app goes to lobby
+                    await LobbyController.clearSession();
                     Get.delete<MatchController>();
                     Get.offAllNamed('/lobby');
                   },
@@ -109,14 +133,26 @@ class MatchResultOverlay extends StatelessWidget {
     );
   }
 
-  Widget _buildScore(String teamName, int score, Color color) {
+  Widget _buildScore(String teamName, int score, int moves, Color color) {
     return Column(
       children: [
-        Text(teamName, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 18)),
-        const SizedBox(height: 8),
+        Text(teamName, style: TextStyle(color: color.withOpacity(0.8), fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 1.5)),
+        const SizedBox(height: 12),
         Text(
           score.toString(),
-          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900),
+          style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w900, height: 1.0),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '$moves Moves',
+            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
         ),
       ],
     );

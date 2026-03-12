@@ -4,6 +4,7 @@ enum JoinMatchStatus {
   reconnected,
   lateJoinRejected,
   matchFull,
+  teamFull,
   error
 }
 

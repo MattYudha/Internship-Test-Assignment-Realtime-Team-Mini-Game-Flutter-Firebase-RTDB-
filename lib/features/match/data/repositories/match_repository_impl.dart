@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../../domain/entities/match.dart';
 import '../../domain/entities/tower.dart';
@@ -87,7 +88,7 @@ class MatchRepositoryImpl implements MatchRepository {
   }
 
   @override
-  Future<JoinMatchResult> joinMatch(String playerId, String displayName) async {
+  Future<JoinMatchResult> joinMatch(String playerId, String displayName, {String? preferredTeam}) async {
     final sysRef = _db.ref('system/waiting_match');
     final snapshot = await sysRef.get();
     
@@ -97,28 +98,23 @@ class MatchRepositoryImpl implements MatchRepository {
 
     final String activeMatchId = snapshot.value as String;
     
-    // --- 1. Check Match Status (Prof's Rule #11) ---
+    // --- 1. Check Match Status ---
     final statusSnap = await _matchRef(activeMatchId).child('meta/status').get();
     final currentStatus = statusSnap.exists ? statusSnap.value as String : 'waiting';
     
     if (currentStatus == 'ended') {
-      // 10️⃣ Cara yang lebih rapi: Saat match selesai meta.status = ended, reset system/waiting_match = null
       await sysRef.remove();
       return const JoinMatchResult(status: JoinMatchStatus.error, message: 'Match has ended');
     }
 
-    // --- 2. Reconnect System (Prof's Rule #14) ---
-    // 12️⃣ Reopen app -> reconnect ke match
+    // --- 2. Reconnect System ---
     final playerSnapshot = await _matchRef(activeMatchId).child('players/$playerId').get();
     if (playerSnapshot.exists) {
       final playerData = Map<dynamic, dynamic>.from(playerSnapshot.value as Map);
-      
-      // Update displayName and lastSeenAt on reconnect
       await _matchRef(activeMatchId).child('players/$playerId').update({
         'displayName': displayName,
         'lastSeenAt': ServerValue.timestamp,
       });
-
       return JoinMatchResult(
         status: JoinMatchStatus.reconnected,
         matchId: activeMatchId,
@@ -128,53 +124,77 @@ class MatchRepositoryImpl implements MatchRepository {
 
     // UID DOES NOT EXIST IN MATCH.
     if (currentStatus == 'running') {
-      // Reject Late Join! (Prof's Rule)
       return const JoinMatchResult(status: JoinMatchStatus.lateJoinRejected, message: 'Match is already running.');
     }
 
-    // --- 3. New Player Join Logic (ATOMIC SLOT ACQUISITION) ---
+    // --- 3. Atomic Slot Acquisition with preferredTeam support ---
     final countsRef = _matchRef(activeMatchId).child('meta/teamCounts');
     String assignedTeam = '';
     bool isMatchFull = false;
+    bool isTeamFull = false;
 
-    // Prof's Rule: Atomic capacity check + increment selection
     final TransactionResult balanceResult = await countsRef.runTransaction((Object? currentData) {
       if (currentData == null) {
-        assignedTeam = 'teamA';
-        return Transaction.success({'teamA': 1, 'teamB': 0});
+        // First player ever, honor preferredTeam or default to A
+        final team = preferredTeam ?? 'teamA';
+        assignedTeam = team;
+        return Transaction.success({team == 'teamA' ? 'teamA' : 'teamB': 1, team == 'teamA' ? 'teamB' : 'teamA': 0});
       }
       
       Map<dynamic, dynamic> counts = Map<dynamic, dynamic>.from(currentData as Map);
       int countA = counts['teamA'] ?? 0;
       int countB = counts['teamB'] ?? 0;
 
-      if (countA + countB >= 8) {
-        isMatchFull = true;
-        return Transaction.abort(); // ATOMICALLY REJECT IF FULL
-      }
-
-      if (countB < countA) {
-        counts['teamB'] = countB + 1;
-        assignedTeam = 'teamB';
+      if (preferredTeam != null) {
+        // --- Preferred team path: honor the choice with per-team 4-cap ---
+        if (preferredTeam == 'teamA') {
+          if (countA >= 4) {
+            isTeamFull = true;
+            return Transaction.abort();
+          }
+          counts['teamA'] = countA + 1;
+          assignedTeam = 'teamA';
+        } else {
+          if (countB >= 4) {
+            isTeamFull = true;
+            return Transaction.abort();
+          }
+          counts['teamB'] = countB + 1;
+          assignedTeam = 'teamB';
+        }
       } else {
-        counts['teamA'] = countA + 1;
-        assignedTeam = 'teamA';
+        // --- Quick Join path: auto-balance with total 8-cap ---
+        if (countA + countB >= 8) {
+          isMatchFull = true;
+          return Transaction.abort();
+        }
+        if (countB < countA) {
+          counts['teamB'] = countB + 1;
+          assignedTeam = 'teamB';
+        } else {
+          counts['teamA'] = countA + 1;
+          assignedTeam = 'teamA';
+        }
       }
       
       return Transaction.success(counts);
     });
 
     if (!balanceResult.committed) {
+      if (isTeamFull) {
+        return JoinMatchResult(
+          status: JoinMatchStatus.teamFull,
+          message: '${preferredTeam == 'teamA' ? 'Team A' : 'Team B'} is full. Please choose the other team.',
+        );
+      }
       if (isMatchFull) {
         return const JoinMatchResult(status: JoinMatchStatus.matchFull, message: 'Match is full.');
       }
       return const JoinMatchResult(status: JoinMatchStatus.error, message: 'Failed to join match due to traffic.');
     }
 
-    // Slot secured! Now write the player node and optionally start the match
+    // Slot secured! Write player node
     final finalData = Map<dynamic, dynamic>.from(balanceResult.snapshot.value as Map);
-    
-    // Multi-path update for atomicity of player write + match start
     Map<String, dynamic> updates = {
       'players/$playerId': {
         'displayName': displayName,
@@ -184,14 +204,12 @@ class MatchRepositoryImpl implements MatchRepository {
       }
     };
 
-    // If we hit capacity (8), mark match as running AND INITIALIZE ABSOLUTE TIMERS
     int totalPlayers = (finalData['teamA'] as int) + (finalData['teamB'] as int);
     if (totalPlayers >= 8 && currentStatus != 'running') {
-      // We do not delete sysRef yet, kept for reconnections
-      final now = _serverTimeMs; // Fetch precise synchronized time
+      final now = _serverTimeMs;
       updates['meta/status'] = 'running';
       updates['meta/startAt'] = now;
-      updates['meta/endAt'] = now + 300000; // Exact 5 minutes from calculated start
+      updates['meta/endAt'] = now + 300000;
     }
 
     await _matchRef(activeMatchId).update(updates);
@@ -278,7 +296,7 @@ class MatchRepositoryImpl implements MatchRepository {
         if (state == 'available' || (state == 'claimed' && currentClaimExp != null && currentClaimExp < now)) {
           towerData['state'] = 'claimed';
           towerData['claimedBy'] = playerId;
-          towerData['claimExpiresAt'] = now + 45000; // 45 seconds from EXACT SERVER TIME
+          towerData['claimExpiresAt'] = now + 90000; // 90 seconds — enough for human players to solve multi-step towers
           return Transaction.success(towerData);
         }
         
@@ -310,6 +328,7 @@ class MatchRepositoryImpl implements MatchRepository {
         if (state == 'claimed' && claimedBy == playerId) {
           towerData['state'] = 'solved';
           towerData['solvedBy'] = playerId;
+          towerData['solvedAt'] = ServerValue.timestamp; // Timestamp for car position
           towerData['movesTaken'] = movesTaken;
           towerData['optimalMoves'] = optimalMoves;
           return Transaction.success(towerData);
@@ -326,6 +345,21 @@ class MatchRepositoryImpl implements MatchRepository {
       // 3. Increment Player Stats
       matchRef.child('players/$playerId/stats/towersSolved').set(ServerValue.increment(1));
       matchRef.child('players/$playerId/stats/totalMoves').set(ServerValue.increment(movesTaken));
+
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error solving tower: $e');
+      }
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> replaceTower(String matchId, String teamId, String towerId) async {
+    try {
+      final DatabaseReference matchRef = _db.ref('matches/$matchId');
+      final DatabaseReference towerRef = matchRef.child('teams/$teamId/towers/$towerId');
 
       // 4. Deterministic regeneration
       // Increment poolIndex via Transaction to get the exact new index without race condition
@@ -345,22 +379,29 @@ class MatchRepositoryImpl implements MatchRepository {
         if (poolSnapshot.exists) {
           final int newStartValue = (poolSnapshot.value as int?) ?? 10;
           
-          // ADD a new tower slot to the end of the list instead of overwriting the solved one
-          final String newTowerId = 'tower_$newIndex';
-          await matchRef.child('teams/$teamId/towers/$newTowerId').set({
+          // REPLACE the old solved tower slot with a fresh available tower
+          // This keeps the total tower count strictly at 20 to prevent FPS drops.
+          // By wiping solvedAt, the car icon naturally detaches.
+          await towerRef.set({
+            'id': towerId,
             'startValue': newStartValue,
             'state': 'available',
             'claimedBy': null,
             'claimExpiresAt': null,
             'solvedBy': null,
+            'solvedAt': null,
             'movesTaken': null,
             'optimalMoves': null,
           });
+          return true;
         }
       }
 
-      return true;
+      return false;
     } catch (e) {
+      if (kDebugMode) {
+        print('Error replacing tower: $e');
+      }
       return false;
     }
   }

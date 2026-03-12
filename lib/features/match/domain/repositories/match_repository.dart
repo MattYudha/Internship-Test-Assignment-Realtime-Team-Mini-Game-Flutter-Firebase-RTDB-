@@ -5,8 +5,8 @@ abstract class MatchRepository {
   /// Create a complete match node optimistically
   Future<String?> createMatch(List<int> towerPool, int targetValue, String hostUid);
 
-  /// Join a match by UID, handles auto-balancing via teamCounts transaction
-  Future<JoinMatchResult> joinMatch(String playerId, String displayName);
+  /// Join a match by UID. [preferredTeam] = 'teamA' | 'teamB' | null (auto-balance)
+  Future<JoinMatchResult> joinMatch(String playerId, String displayName, {String? preferredTeam});
 
   /// Removes a player cleanly (used for Debug Session Reset to prevent ghost players)
   Future<void> debugCleanupGhostPlayer(String playerId);
@@ -25,6 +25,9 @@ abstract class MatchRepository {
   
   /// Solve a tower, atomically update team score, and deterministically replace the tower
   Future<bool> solveTower(String matchId, String teamId, String towerId, String playerId, int movesTaken, int optimalMoves);
+  
+  /// Replace a solved tower with a fresh one from the pool after animation delay
+  Future<bool> replaceTower(String matchId, String teamId, String towerId);
   
   /// Release a claimed tower explicitly 
   Future<void> releaseTower(String matchId, String teamId, String towerId);

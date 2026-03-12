@@ -256,7 +256,7 @@ class MatchController extends GetxController {
     // Non-blocking BFS optimal moves calculation
     final optimal = await BfsSolver.getOptimalMoves(startValue, target);
 
-    return await _solveUseCase(
+    bool success = await _solveUseCase(
       matchId: matchId,
       teamId: teamId,
       towerId: towerId,
@@ -264,6 +264,15 @@ class MatchController extends GetxController {
       movesTaken: moves,
       optimalMoves: optimal,
     );
+
+    if (success) {
+      // Phase 2 of Two-Phase Commit: Wait for Flame animation, then replace the tower network slot
+      Future.delayed(const Duration(seconds: 3), () {
+        _matchRepo.replaceTower(matchId, teamId, towerId);
+      });
+    }
+
+    return success;
   }
 
   Future<void> handleCancelClaim(String towerId) async {

@@ -64,7 +64,7 @@ class BotService extends GetxController {
   // Spawn a bot: register it in Firebase, then kick off its loop if running.
   // --------------------------------------------------------------------------
   Future<void> spawnBot(String teamId, String skillLevel) async {
-    if (_bots.length >= 6) return; // Hard cap: max 6 bots total
+    if (_bots.length >= 7) return; // Hard cap: max 7 bots total (for 4v4 with 1 human host)
 
     final String botUid = 'bot_${_uuid.v4().substring(0, 8)}';
     final String botName = _botName();
@@ -122,8 +122,18 @@ class BotService extends GetxController {
 
         // --- Wait for a valid running match ---
         final match = _latestMatch;
-        if (match == null || match.meta.status != 'running') {
-          print('[Bot ${bot.uid}] Waiting for match to start (status: ${match?.meta.status})...');
+        if (match == null) {
+          await Future.delayed(const Duration(seconds: 2));
+          continue;
+        }
+
+        if (match.meta.status == 'finished' || match.meta.status == 'ended') {
+          print('[Bot ${bot.uid}] Match ended! Stopping simulation.');
+          break; // Stop completely
+        }
+
+        if (match.meta.status != 'running') {
+          print('[Bot ${bot.uid}] Waiting for match to start (status: ${match.meta.status})...');
           await Future.delayed(const Duration(seconds: 2));
           continue;
         }
@@ -222,6 +232,10 @@ class BotService extends GetxController {
 
         if (solveSuccess) {
            print('[Bot $botUid] -> SOLVE SUCCESS on ${target.id} ($reportedMoves moves)');
+           // Phase 2: Give the UI 3 seconds to animate the solve, then replace it on the network
+           Future.delayed(const Duration(seconds: 3), () {
+             _matchRepo.replaceTower(matchId, bot.teamId, target.id);
+           });
         } else {
            print('[Bot $botUid] -> SOLVE FAILED/REJECTED on ${target.id}');
         }

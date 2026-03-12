@@ -5,6 +5,7 @@ class Tower {
   final String? claimedBy;
   final int? claimExpiresAt;
   final String? solvedBy;
+  final int? solvedAt; // Timestamp ms — used to find most recently solved (car position)
   final int? movesTaken;
   final int? optimalMoves;
 
@@ -15,6 +16,7 @@ class Tower {
     this.claimedBy,
     this.claimExpiresAt,
     this.solvedBy,
+    this.solvedAt,
     this.movesTaken,
     this.optimalMoves,
   });
@@ -25,10 +27,11 @@ class Tower {
       startValue: json['startValue'] ?? 0,
       state: json['state'] ?? 'available',
       claimedBy: json['claimedBy'],
-      claimExpiresAt: json['claimExpiresAt'],
+      claimExpiresAt: json['claimExpiresAt'] is int ? json['claimExpiresAt'] as int : null,
       solvedBy: json['solvedBy'],
-      movesTaken: json['movesTaken'],
-      optimalMoves: json['optimalMoves'],
+      solvedAt: json['solvedAt'] is int ? json['solvedAt'] as int : null,
+      movesTaken: json['movesTaken'] is int ? json['movesTaken'] as int : null,
+      optimalMoves: json['optimalMoves'] is int ? json['optimalMoves'] as int : null,
     );
   }
 
@@ -39,6 +42,7 @@ class Tower {
       'claimedBy': claimedBy,
       'claimExpiresAt': claimExpiresAt,
       'solvedBy': solvedBy,
+      'solvedAt': solvedAt,
       'movesTaken': movesTaken,
       'optimalMoves': optimalMoves,
     };
@@ -51,6 +55,7 @@ class Tower {
     String? claimedBy,
     int? claimExpiresAt,
     String? solvedBy,
+    int? solvedAt,
     int? movesTaken,
     int? optimalMoves,
   }) {
@@ -61,6 +66,7 @@ class Tower {
       claimedBy: claimedBy ?? this.claimedBy,
       claimExpiresAt: claimExpiresAt ?? this.claimExpiresAt,
       solvedBy: solvedBy ?? this.solvedBy,
+      solvedAt: solvedAt ?? this.solvedAt,
       movesTaken: movesTaken ?? this.movesTaken,
       optimalMoves: optimalMoves ?? this.optimalMoves,
     );

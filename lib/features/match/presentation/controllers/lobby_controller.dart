@@ -1,11 +1,18 @@
+import 'dart:async';
+import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/match_repository.dart';
 import '../../domain/usecases/create_match_usecase.dart';
 import '../../domain/usecases/join_match_usecase.dart';
 import '../../domain/usecases/generate_tower_pool_usecase.dart';
 import '../../domain/entities/join_match_result.dart';
+
+/// Type-safe team enum
+enum LobbyTeam { a, b }
 
 class LobbyController extends GetxController {
   final AuthRepository authRepo;
@@ -26,76 +33,122 @@ class LobbyController extends GetxController {
   final isConnecting = false.obs;
   final loadingMessage = ''.obs;
 
+  // Team selection state
+  final Rx<LobbyTeam?> selectedTeam = Rx<LobbyTeam?>(null);
+
+  // Live team counts from Firebase (streamed)
+  final RxInt countA = 0.obs;
+  final RxInt countB = 0.obs;
+
+  StreamSubscription? _teamCountsSubscription;
+
+  @override
+  void onInit() {
+    super.onInit();
+    _startTeamCountsStream();
+  }
+
+  /// Start streaming meta/teamCounts from the active waiting match
+  void _startTeamCountsStream() {
+    final sysRef = FirebaseDatabase.instance.ref('system/waiting_match');
+    sysRef.onValue.listen((event) {
+      if (!event.snapshot.exists || event.snapshot.value == null) return;
+      final matchId = event.snapshot.value as String;
+      _teamCountsSubscription?.cancel();
+      _teamCountsSubscription = FirebaseDatabase.instance
+          .ref('matches/$matchId/meta/teamCounts')
+          .onValue
+          .listen((e) {
+            if (!e.snapshot.exists) return;
+            final data = Map<dynamic, dynamic>.from(e.snapshot.value as Map);
+            countA.value = (data['teamA'] as num?)?.toInt() ?? 0;
+            countB.value = (data['teamB'] as num?)?.toInt() ?? 0;
+          });
+    });
+  }
+
   @override
   void onClose() {
+    _teamCountsSubscription?.cancel();
     playerNameController.dispose();
     super.onClose();
   }
 
-  Future<void> findOrHostMatch() async {
+  /// Join with optional preferred team. null = Quick Join (auto-balance)
+  Future<void> findOrHostMatch({LobbyTeam? preferredTeam}) async {
     final name = playerNameController.text.trim();
     if (name.isEmpty) {
-      Get.snackbar('Error', 'Please enter your name', backgroundColor: Colors.red[100], colorText: Colors.red[800]);
+      Get.snackbar('Name Required', 'Please enter your display name before joining.',
+          backgroundColor: const Color(0xFFD32F2F),
+          colorText: Colors.white,
+          snackPosition: SnackPosition.TOP,
+          margin: const EdgeInsets.all(12),
+          borderRadius: 12);
       return;
     }
 
     isConnecting.value = true;
-    
+
     try {
-      loadingMessage.value = 'Signing in asynchronously...';
+      loadingMessage.value = 'Signing in...';
       final user = await authRepo.signInAnonymously();
-      
-      if (user == null) {
-        throw Exception('Authentication failed');
-      }
+      if (user == null) throw Exception('Authentication failed');
+
+      final preferredTeamStr = preferredTeam == null
+          ? null
+          : (preferredTeam == LobbyTeam.a ? 'teamA' : 'teamB');
 
       loadingMessage.value = 'Looking for an active match...';
-      // ATTEMPT 1: Join an existing waiting match
-      JoinMatchResult joinResult = await joinMatchUseCase(user, name);
+      JoinMatchResult joinResult = await joinMatchUseCase(user, name, preferredTeam: preferredTeamStr);
 
       if (joinResult.status == JoinMatchStatus.error) {
-        // Queue was empty or match ended. We must become the Host.
-        loadingMessage.value = 'No match found. Generating new arena (this may take a moment)...';
-        
-        // heavy lifting on background isolate
-        final towerPool = await generateTowerPoolUseCase(); 
-        
+        loadingMessage.value = 'No match found. Generating new arena...';
+        final towerPool = await generateTowerPoolUseCase();
+
         loadingMessage.value = 'Uploading arena to server...';
-        print('Tower pool generated with length: ${towerPool.length}');
-        
-        // Try to create and win the queue
+        if (kDebugMode) print('Tower pool generated with length: ${towerPool.length}');
+
         String? newMatchId = await createMatchUseCase(towerPool, 1000, user);
 
         if (newMatchId == null) {
-          // We LOST the optimistic concurrency race. Someone else built a match in that exact microsecond window.
-          // Retry joining immediately.
-          loadingMessage.value = 'Arena collision detected. Redirecting to winning match...';
-          joinResult = await joinMatchUseCase(user, name);
-          
+          loadingMessage.value = 'Arena collision detected. Redirecting...';
+          joinResult = await joinMatchUseCase(user, name, preferredTeam: preferredTeamStr);
           if (joinResult.status == JoinMatchStatus.error) {
-              throw Exception('Critical matchmaking collision. Please try again.');
+            throw Exception('Critical matchmaking collision. Please try again.');
           }
         } else {
-          print('We WON the optimistic creation. Match ID: $newMatchId');
-          // We WON the optimistic creation. 
-          // We must now insert ourselves as the first player (Host -> Team A usually)
           loadingMessage.value = 'Arena secured. Joining...';
-          joinResult = await joinMatchUseCase(user, name);
+          joinResult = await joinMatchUseCase(user, name, preferredTeam: preferredTeamStr);
           if (joinResult.status == JoinMatchStatus.error) {
-            print('Failed to join our own generated match.');
             throw Exception('Failed to join our own generated match.');
           }
         }
       }
 
-      // Explicitly reject Late Joins per Prof's Review Rule #1
+      // Handle team full
+      if (joinResult.status == JoinMatchStatus.teamFull) {
+        final teamName = preferredTeam == LobbyTeam.a ? 'Team A' : 'Team B';
+        Get.snackbar('$teamName is Full',
+            joinResult.message ?? 'Please choose the other team.',
+            backgroundColor: Colors.orange[700],
+            colorText: Colors.white,
+            snackPosition: SnackPosition.TOP,
+            margin: const EdgeInsets.all(12),
+            borderRadius: 12);
+        return;
+      }
+
+      // Reject late join
       if (joinResult.status == JoinMatchStatus.lateJoinRejected) {
-        Get.snackbar('Match Running', 'A match is already running. You cannot late join. Please wait for the next match.', 
-            backgroundColor: Colors.orange[200], colorText: Colors.black87, duration: const Duration(seconds: 4));
+        Get.snackbar('Match In Progress',
+            'A match is already running. Please wait for the next match.',
+            backgroundColor: Colors.orange[200], colorText: Colors.black87,
+            duration: const Duration(seconds: 4));
         return;
       } else if (joinResult.status == JoinMatchStatus.matchFull) {
-        Get.snackbar('Room Full', 'The current match is full (Max 8 players).', 
-            backgroundColor: Colors.orange[200], colorText: Colors.black87, duration: const Duration(seconds: 4));
+        Get.snackbar('Room Full', 'The current match is full (Max 8 players).',
+            backgroundColor: Colors.orange[200], colorText: Colors.black87,
+            duration: const Duration(seconds: 4));
         return;
       }
 
@@ -103,19 +156,51 @@ class LobbyController extends GetxController {
         throw Exception('System error: missing match routing data.');
       }
 
-      // Route to match providing the critical dependencies!
+      // ── Save session for rejoin on app reopen ──
+      await _saveSession(
+        uid: user,
+        matchId: joinResult.matchId!,
+        teamId: joinResult.teamId!,
+        displayName: name,
+      );
+
       Get.offAllNamed('/match', arguments: {
         'matchId': joinResult.matchId,
         'teamId': joinResult.teamId,
         'playerId': user,
       });
-
     } catch (e) {
-      Get.snackbar('Connection Error', e.toString(), 
-          backgroundColor: Colors.red[300], colorText: Colors.white, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Connection Error', e.toString(),
+          backgroundColor: Colors.red[300], colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isConnecting.value = false;
     }
+  }
+
+  static Future<void> _saveSession({
+    required String uid,
+    required String matchId,
+    required String teamId,
+    required String displayName,
+  }) async {
+    try {
+      final prefs = Get.find<SharedPreferences>();
+      await prefs.setString('session_uid', uid);
+      await prefs.setString('session_match_id', matchId);
+      await prefs.setString('session_team_id', teamId);
+      await prefs.setString('session_display_name', displayName);
+    } catch (_) {}
+  }
+
+  static Future<void> clearSession() async {
+    try {
+      final prefs = Get.find<SharedPreferences>();
+      await prefs.remove('session_uid');
+      await prefs.remove('session_match_id');
+      await prefs.remove('session_team_id');
+      await prefs.remove('session_display_name');
+    } catch (_) {}
   }
 
   Future<void> debugResetSession() async {
@@ -124,16 +209,16 @@ class LobbyController extends GetxController {
     try {
       final String uid = authRepo.getCurrentUid() ?? '';
       if (uid.isNotEmpty) {
-        // Clean up from active waiting lobby if they are in one
         await matchRepo.debugCleanupGhostPlayer(uid);
       }
+      await clearSession();
       loadingMessage.value = 'Signing out anonymous session...';
       await authRepo.signOut();
-      
-      Get.snackbar('Session Reset', 'You will be issued a fresh anonymous UID on next play.', 
+      Get.snackbar('Session Reset',
+          'You will be issued a fresh anonymous UID on next play.',
           backgroundColor: Colors.green[200], colorText: Colors.black87);
     } catch (e) {
-      Get.snackbar('Cleanup Error', e.toString(), 
+      Get.snackbar('Cleanup Error', e.toString(),
           backgroundColor: Colors.red[300], colorText: Colors.white);
     } finally {
       isConnecting.value = false;

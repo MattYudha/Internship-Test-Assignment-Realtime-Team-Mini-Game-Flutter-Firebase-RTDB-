@@ -69,23 +69,29 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: widget.botService.botCount >= 6 ? null : () async {
+                  onPressed: widget.botService.botCount >= 7 ? null : () async {
                     await widget.botService.spawnBot('teamA', _selectedSkill);
                   },
                   icon: const Icon(Icons.add),
                   label: const Text('Add Team A'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[100]),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: widget.botService.botCount >= 6 ? null : () async {
+                  onPressed: widget.botService.botCount >= 7 ? null : () async {
                     await widget.botService.spawnBot('teamB', _selectedSkill);
                   },
                   icon: const Icon(Icons.add),
                   label: const Text('Add Team B'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.cyan[100]),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.cyan,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
             ],
@@ -94,7 +100,7 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
           const SizedBox(height: 8),
           Center(
             child: Obx(() => Text(
-              '${widget.botService.botCount} / 6 Bots Spawned',
+              '${widget.botService.botCount} / 7 Bots Spawned',
               style: TextStyle(color: Colors.grey[700], fontSize: 12),
             )),
           ),
@@ -112,7 +118,8 @@ class _DebugBotPanelState extends State<DebugBotPanel> {
             icon: Icon(widget.botService.isRunning ? Icons.stop : Icons.play_arrow),
             label: Text(widget.botService.isRunning ? 'STOP SIMULATION' : 'START SIMULATION'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: widget.botService.isRunning ? Colors.red[100] : Colors.green[100],
+              backgroundColor: widget.botService.isRunning ? Colors.red : Colors.green,
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
           )),
